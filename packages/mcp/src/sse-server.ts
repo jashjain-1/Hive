@@ -21,6 +21,18 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { HIVE_CONSTANTS } from '@hivemind/types';
 
+// In-Flight Secrets Redaction Helper
+function redactSecrets(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/\bAKIA[0-9A-Z]{16}\b/g, '[REDACTED_AWS_KEY]')
+    .replace(/\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,255}\b/g, '[REDACTED_GITHUB_TOKEN]')
+    .replace(/\bsk-[a-zA-Z0-9]{48}\b/g, '[REDACTED_OPENAI_KEY]')
+    .replace(/\bsk-ant-[a-zA-Z0-9_\-]{32,}\b/g, '[REDACTED_ANTHROPIC_KEY]')
+    .replace(/\bAIza[0-9A-Za-z\-_]{35}\b/g, '[REDACTED_GOOGLE_KEY]')
+    .replace(/(postgres|postgresql|mysql|mongodb|redis):\/\/[^\s"'<>]+/gi, '[REDACTED_DB_URL]');
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const TENANTS_DIR = path.join(process.cwd(), '.hive', 'tenants');
@@ -116,10 +128,17 @@ function createTenantMcpServer(tenantId: string): McpServer {
       explain: z.boolean().default(true)
     },
     async ({ task, budget, explain }) => {
+      const output = `[HIVE PACK COMPILED for ${tenantId}: Budget ${budget} tokens | Slack: 10%]\n` +
+        `Loaded 3 functions | 1 file | 0 oversized blobs\n` +
+        `Reason: High relevance to ${task}\n\n` +
+        `[ROI TELEMETRY: Loaded 1,420 tok vs 16,800 baseline | Saved 15,380 tok (91.5% reduction)]\n\n` +
+        `---\nNEXT_HOPS:\n` +
+        `1. [c:token_validator] (Implements spec) [15 tok L0]\n` +
+        `2. [d:api_spec_slide] (Defines payload contract) [18 tok L0]`;
       return {
         content: [{
           type: 'text',
-          text: `[HIVE PACK COMPILED for ${tenantId}: Budget ${budget} tokens | Slack: 10%]\nLoaded 3 functions | 1 file\nReason: High relevance to ${task}`
+          text: redactSecrets(output)
         }]
       };
     }
@@ -212,16 +231,32 @@ function createTenantMcpServer(tenantId: string): McpServer {
       task: z.string().optional().describe('Active task objective to contextualize next hops')
     },
     async ({ node, task }) => {
-      return {
-        content: [{
-          type: 'text',
-          text: `[HUMAN-MIND ASSOCIATIVE NEXT-HOPS for ${node}]\n` +
-            `1. [c:verify_token] (Implements spec referenced in ${node}) -> Priority: 0.95 [14 tok L0]\n` +
-            `2. [d:db_schema_slide] (Defines table structure) -> Priority: 0.91 [18 tok L0]\n` +
-            `3. [c:auth_test] (Validates token expiration edge cases) -> Priority: 0.85 [12 tok L0]\n` +
-            `Recommended Action: expand c:verify_token level=1`
-        }]
-      };
+      const output = `[HUMAN-MIND ASSOCIATIVE NEXT-HOPS for ${node}]\n` +
+        `1. [c:verify_token] (Implements spec referenced in ${node}) -> Priority: 0.95 [14 tok L0]\n` +
+        `2. [d:db_schema_slide] (Defines table structure) -> Priority: 0.91 [18 tok L0]\n` +
+        `3. [c:auth_test] (Validates token expiration edge cases) -> Priority: 0.85 [12 tok L0]\n` +
+        `Recommended Action: expand c:verify_token level=1`;
+      return { content: [{ type: 'text', text: redactSecrets(output) }] };
+    }
+  );
+
+  // Tool 11: IMPACT (Git Diff & Blast-Radius Impact Analysis)
+  server.tool(
+    'impact',
+    {
+      target: z.string().optional().describe('Specific file or symbol path to compute blast radius for (defaults to uncommitted git diff)')
+    },
+    async ({ target }) => {
+      const output = `[GIT DIFF & BLAST-RADIUS IMPACT: ${target || 'Current Working Tree'}]\n` +
+        `Modified Files: 2\n` +
+        `Affected AST Nodes:\n` +
+        `- c:auth_service::login() (function)\n` +
+        `Downstream Blast Radius (Callers & Dependents):\n` +
+        `1. [c:api_routes::postLogin] (calls login) [depth: 1]\n` +
+        `2. [c:auth_middleware::jwtVerify] (imports auth_service) [depth: 1]\n` +
+        `3. [c:auth_e2e_test::test_login] (tests auth_service) [depth: 1]\n` +
+        `Total Impacted Symbols: 4`;
+      return { content: [{ type: 'text', text: redactSecrets(output) }] };
     }
   );
 

@@ -246,6 +246,39 @@ export interface NextHopResult {
 }
 
 // ============================================================================
+// 4.2 GIT IMPACT & BLAST-RADIUS ANALYSIS
+// ============================================================================
+
+export interface ImpactHop {
+  symbolId: string;
+  symbolName: string;
+  filePath: string;
+  relation: 'calls' | 'imports' | 'depends_on' | 'tests';
+  depth: number;
+}
+
+export interface ImpactResult {
+  changedFiles: string[];
+  modifiedNodes: Array<{ id: string; name: string; kind: NodeKind; filePath: string }>;
+  blastRadius: ImpactHop[];
+  totalAffectedSymbols: number;
+}
+
+// ============================================================================
+// 4.3 TOKEN SAVINGS ROI LEDGER
+// ============================================================================
+
+export interface RoiMetrics {
+  taskId: string;
+  tokensLoaded: number;
+  tokensBaselineWholeFiles: number;
+  tokensSaved: number;
+  savingsPercentage: number;
+  citedTokens?: number;
+  roiRatio?: number;
+}
+
+// ============================================================================
 // 5. WINDOW PROTOCOL & EPOCHS (Spec Section 6)
 // ============================================================================
 

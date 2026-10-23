@@ -1,0 +1,51 @@
+/**
+ * In-Flight Secrets Redaction Interceptor
+ * 
+ * Automatically detects and scrubs credentials, API keys, private keys,
+ * and database connection strings before text payloads are returned to LLMs.
+ */
+
+export class SecretsRedactor {
+  private static readonly RULES: Array<{ pattern: RegExp; replacement: string }> = [
+    // AWS Access Key ID
+    { pattern: /\bAKIA[0-9A-Z]{16}\b/g, replacement: '[REDACTED_AWS_KEY]' },
+    
+    // GitHub Personal Access Tokens
+    { pattern: /\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,255}\b/g, replacement: '[REDACTED_GITHUB_TOKEN]' },
+    { pattern: /\bgithub_pat_[A-Za-z0-9_]{82}\b/g, replacement: '[REDACTED_GITHUB_PAT]' },
+
+    // OpenAI API Key
+    { pattern: /\bsk-[a-zA-Z0-9]{48}\b/g, replacement: '[REDACTED_OPENAI_KEY]' },
+    
+    // Anthropic API Key
+    { pattern: /\bsk-ant-[a-zA-Z0-9_\-]{32,}\b/g, replacement: '[REDACTED_ANTHROPIC_KEY]' },
+
+    // Google Cloud / Gemini API Key
+    { pattern: /\bAIza[0-9A-Za-z\-_]{35}\b/g, replacement: '[REDACTED_GOOGLE_KEY]' },
+
+    // Generic JSON Web Token (JWT)
+    { pattern: /\beyJ[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.?[A-Za-z0-9-_.+/=]*\b/g, replacement: '[REDACTED_JWT_TOKEN]' },
+
+    // Database Connection Strings
+    { pattern: /(postgres|postgresql|mysql|mongodb|redis|mssql):\/\/[^\s"'<>]+/gi, replacement: '[REDACTED_DB_CONNECTION_STRING]' },
+
+    // Private Keys (RSA, EC, OpenSSH, PGP)
+    { pattern: /-----BEGIN [A-Z\s]+PRIVATE KEY-----[\s\S]*?-----END [A-Z\s]+PRIVATE KEY-----/g, replacement: '[REDACTED_PRIVATE_KEY]' },
+
+    // Common Password assignments in code/configs
+    { pattern: /(api[_-]?key|secret|password|passwd|token)\s*[:=]\s*["']([^"']{8,})["']/gi, replacement: '$1: "[REDACTED_CREDENTIAL]"' }
+  ];
+
+  /**
+   * Redacts sensitive secrets from the target string.
+   */
+  public static redact(text: string): string {
+    if (!text || typeof text !== 'string') return text;
+
+    let sanitized = text;
+    for (const rule of this.RULES) {
+      sanitized = sanitized.replace(rule.pattern, rule.replacement);
+    }
+    return sanitized;
+  }
+}
