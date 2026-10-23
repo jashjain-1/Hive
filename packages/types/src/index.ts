@@ -145,6 +145,61 @@ export interface GraphJsonExport {
 // 4. TASK-AWARE PRIORITIZATION & PACK CONTRACTS (Spec Sections 7, 8)
 // ============================================================================
 
+export type QueryIntent = 'lexical' | 'semantic' | 'relational' | 'hybrid';
+
+export interface IntentAnalysis {
+  intent: QueryIntent;
+  confidence: number;
+  weights: {
+    bm25: number;
+    vector: number;
+    graph: number;
+  };
+  detectedSymbols: string[];
+}
+
+export interface VectorSearchQuery {
+  vector: Float32Array;
+  topK: number;
+  subsystem?: string;
+  minScore?: number;
+}
+
+export interface VectorSearchResult {
+  nodeId: string;
+  score: number;
+}
+
+export interface ClusterBudgetAllocation {
+  clusterKey: string;                       // e.g. "subsystem:backend" or "file:src/auth.ts"
+  allocatedTokens: number;
+  usedTokens: number;
+  candidateCount: number;
+  selectedCount: number;
+}
+
+export interface NodeProofEntry {
+  nodeId: string;
+  name: string;
+  clusterKey: string;
+  bm25Raw: number;
+  bm25Norm: number;
+  vecScore: number;
+  graphScore: number;
+  compositeScore: number;
+  intentWeights: { bm25: number; vector: number; graph: number };
+  marginalGain: number;
+  chosenLevel: 0 | 1 | 2 | -1;
+  status: 'INCLUDED' | 'DEFERRED' | 'FORCED_INCLUDED' | 'FORCED_EXCLUDED';
+  decisionFactor: string;
+}
+
+export interface PackProofMatrix {
+  intentAnalysis: IntentAnalysis;
+  clusterAllocations: ClusterBudgetAllocation[];
+  proofEntries: NodeProofEntry[];
+}
+
 export interface TaskCandidate {
   node: NodeRecord;
   level: 0 | 1 | 2;                         // Active representation level
@@ -155,6 +210,8 @@ export interface TaskCandidate {
   costTokens: number;                       // Marginal token cost to load or upgrade
   marginalGain: number;                     // Marginal coverage gain / token cost
   reason: string;                           // 1-line explainable justification
+  clusterKey?: string;                      // Cluster module/subsystem key
+  proofEntry?: NodeProofEntry;              // Detailed numerical verification entry
 }
 
 export interface PackRequest {
@@ -163,6 +220,7 @@ export interface PackRequest {
   subsystem?: string;                       // Optional domain filter (e.g. 'backend', 'desktop', 'models')
   slackPct?: number;                        // Reserve slack (default 0.10 -> 10%)
   explain?: boolean;                        // Whether to include explanation breakdowns
+  enableProofMatrix?: boolean;              // Whether to generate mathematical proof matrix
 }
 
 export interface PackSelection {
@@ -174,6 +232,7 @@ export interface PackSelection {
   tokens: number;
   content: string;                          // L0, L1, or L2 content
   reason: string;                           // Verifiable 1-line reason for inclusion
+  clusterKey?: string;
 }
 
 export interface DeferredSelection {
@@ -182,6 +241,7 @@ export interface DeferredSelection {
   filePath?: string;
   score: number;
   reason: string;                           // 1-line reason for deferral
+  clusterKey?: string;
 }
 
 export interface PackResponse {
@@ -193,6 +253,9 @@ export interface PackResponse {
   items: PackSelection[];
   deferred: DeferredSelection[];
   receipt: PackReceipt;
+  intent?: IntentAnalysis;
+  clusters?: ClusterBudgetAllocation[];
+  proofMatrix?: PackProofMatrix;
 }
 
 export interface PackReceipt {
@@ -257,11 +320,19 @@ export interface NextHopPointer {
   reason: string;                           // 1-line reason why the human mind views this next
 }
 
+export interface CognitiveTrail {
+  trailId: string;
+  hops: NextHopPointer[];
+  totalScore: number;
+  rationale: string;
+}
+
 export interface NextHopResult {
   currentNodeId: string;
   currentName: string;
   task?: string;
   recommendedHops: NextHopPointer[];
+  trails?: CognitiveTrail[];
   trailDepth: number;
 }
 

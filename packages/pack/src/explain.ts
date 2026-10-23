@@ -99,4 +99,24 @@ Factor Breakdown:
 ${factorLines}${overrideLine}${connectedLine}
   Reason:        ${result.justification}`;
   }
+
+  /** Format complete proof matrix as an auditable verification table */
+  formatProofMatrix(matrix: {
+    intentAnalysis: { intent: string; confidence: number; weights: { bm25: number; vector: number; graph: number } };
+    clusterAllocations: Array<{ clusterKey: string; allocatedTokens: number; usedTokens: number; candidateCount: number; selectedCount: number }>;
+    proofEntries: Array<{ nodeId: string; name: string; clusterKey: string; compositeScore: number; chosenLevel: number; status: string; decisionFactor: string }>;
+  }): string {
+    const { intentAnalysis, clusterAllocations, proofEntries } = matrix;
+    const header = `=== HIVE CONTEXT PACK PROOF MATRIX ===\nIntent: ${intentAnalysis.intent.toUpperCase()} (Confidence: ${(intentAnalysis.confidence * 100).toFixed(0)}%) | Weights: [BM25: ${intentAnalysis.weights.bm25.toFixed(2)}, Vec: ${intentAnalysis.weights.vector.toFixed(2)}, Graph: ${intentAnalysis.weights.graph.toFixed(2)}]`;
+
+    const clusterLines = clusterAllocations.map(c =>
+      `  [Cluster: ${c.clusterKey}] Budget: ${c.allocatedTokens} tok | Used: ${c.usedTokens} tok | Chunks: ${c.selectedCount}/${c.candidateCount}`
+    ).join('\n');
+
+    const entryLines = proofEntries.map(e =>
+      `  - ${e.nodeId.padEnd(12)} ${e.status.padEnd(15)} L${e.chosenLevel === -1 ? 'X' : e.chosenLevel} Score: ${e.compositeScore.toFixed(3)} | ${e.decisionFactor}`
+    ).join('\n');
+
+    return `${header}\n\nCluster Allocations:\n${clusterLines}\n\nCandidate Proof Ledger:\n${entryLines}`;
+  }
 }

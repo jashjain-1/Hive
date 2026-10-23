@@ -1,10 +1,11 @@
-import { NodeRecord, NextHopPointer, NextHopResult, LinkRelation } from '@hivemind/types';
+import { NodeRecord, NextHopPointer, NextHopResult, LinkRelation, CognitiveTrail } from '@hivemind/types';
 
 /**
- * Human-Mind Associative Next-Hop Navigation
+ * Human-Mind Associative Next-Hop Navigation & Cognitive Trail Guider
  *
- * Recommends the top 3 logical nodes to view next based on cognitive
- * relation weights, simulating how a human developer navigates a codebase.
+ * 1. 1-Hop Next-Hop Predictor: Recommends the top 3 logical immediate nodes to view next (~45 tok footer).
+ * 2. Multi-Hop Cognitive Trail Guider: Discovers multi-step reasoning paths
+ *    (e.g., Spec -> Implementation -> Test, or Route -> Service -> Database Table).
  *
  * Relation weights:
  *   specifies  = 0.95  (PRD/Spec defines requirements)
@@ -40,7 +41,6 @@ export class NextHopPredictor {
       .map(link => {
         const baseWeight = REL_WEIGHTS[link.rel] ?? 0.70;
         const priorityScore = Math.min(1.0, baseWeight * link.w);
-
         const reason = this.buildReason(link.rel, currentNode, link.dstNode, taskQuery);
 
         return {
@@ -64,6 +64,82 @@ export class NextHopPredictor {
       recommendedHops,
       trailDepth: 1
     };
+  }
+
+  /**
+   * Discovers multi-step cognitive reasoning trails through the knowledge graph.
+   * Explores depth up to maxDepth (default 3 hops) along canonical reasoning archetypes:
+   *   - Specification -> Implementation -> Verification (Spec -> Code -> Test)
+   *   - Ingestion / API Route -> Core Engine -> Database Storage
+   */
+  predictMultiHopTrails(
+    currentNode: NodeRecord,
+    adjacencyMap: Map<string, Array<{ dstNode: NodeRecord; rel: LinkRelation; w: number }>>,
+    maxDepth = 3,
+    taskQuery?: string
+  ): CognitiveTrail[] {
+    const trails: CognitiveTrail[] = [];
+    const visited = new Set<string>([currentNode.id]);
+
+    const dfs = (
+      curr: NodeRecord,
+      currentPath: NextHopPointer[],
+      cumulativeScore: number,
+      depth: number
+    ) => {
+      if (depth >= maxDepth) return;
+
+      const outgoing = adjacencyMap.get(curr.id) ?? [];
+      for (const edge of outgoing) {
+        if (visited.has(edge.dstNode.id)) continue;
+        if (edge.dstNode.status === 'superseded' || edge.dstNode.status === 'quarantined') continue;
+
+        const baseWeight = REL_WEIGHTS[edge.rel] ?? 0.70;
+        const hopScore = Math.min(1.0, baseWeight * edge.w);
+        const nextCumulative = cumulativeScore * hopScore;
+
+        const hopPointer: NextHopPointer = {
+          nodeId: edge.dstNode.id,
+          name: edge.dstNode.name,
+          kind: edge.dstNode.kind,
+          filePath: edge.dstNode.filePath,
+          relation: edge.rel,
+          priorityScore: hopScore,
+          tokensL0: edge.dstNode.tokL0 ?? 15,
+          reason: this.buildReason(edge.rel, curr, edge.dstNode, taskQuery)
+        };
+
+        const newPath = [...currentPath, hopPointer];
+        visited.add(edge.dstNode.id);
+
+        if (newPath.length >= 2) {
+          const trailArchetype = this.classifyTrailArchetype(newPath);
+          trails.push({
+            trailId: `trail:${newPath.map(h => h.nodeId).join('->')}`,
+            hops: newPath,
+            totalScore: nextCumulative,
+            rationale: `${trailArchetype}: ${currentNode.name} -> ${newPath.map(h => `${h.relation} ${h.name}`).join(' -> ')}`
+          });
+        }
+
+        dfs(edge.dstNode, newPath, nextCumulative, depth + 1);
+        visited.delete(edge.dstNode.id);
+      }
+    };
+
+    dfs(currentNode, [], 1.0, 0);
+
+    return trails
+      .sort((a, b) => b.totalScore - a.totalScore)
+      .slice(0, 3);
+  }
+
+  private classifyTrailArchetype(hops: NextHopPointer[]): string {
+    const rels = hops.map(h => h.relation);
+    if (rels.includes('tests')) return 'Specification & Verification Trail';
+    if (rels.includes('implements') || rels.includes('specifies')) return 'Requirement Realization Trail';
+    if (rels.includes('calls') || rels.includes('depends_on')) return 'Execution Call Chain';
+    return 'Associative Discovery Trail';
   }
 
   /** Build a human-readable 1-line reason for why this next hop matters */
@@ -98,11 +174,10 @@ export class NextHopPredictor {
    */
   formatFooter(result: NextHopResult): string {
     if (result.recommendedHops.length === 0) {
-      return '---\\nNEXT_HOPS: None available.';
+      return '---\nNEXT_HOPS: None available.';
     }
 
     const lines = result.recommendedHops.map((hop, idx) => {
-      const kindLabel = hop.kind.startsWith('c:') ? 'c' : 'd';
       return `${idx + 1}. [${hop.nodeId}] (${hop.relation}) -> Priority: ${hop.priorityScore.toFixed(2)} [${hop.tokensL0} tok L0]`;
     });
 
@@ -111,6 +186,13 @@ export class NextHopPredictor {
       ? `Recommended Action: expand ${recommended.nodeId} level=1`
       : 'Recommended Action: search for related symbols';
 
-    return `---\\nNEXT_HOPS:\\n${lines.join('\\n')}\\n${action}`;
+    let footer = `---\nNEXT_HOPS:\n${lines.join('\n')}\n${action}`;
+
+    if (result.trails && result.trails.length > 0) {
+      const topTrail = result.trails[0];
+      footer += `\nCOGNITIVE_TRAIL: ${topTrail.rationale} (score: ${topTrail.totalScore.toFixed(2)})`;
+    }
+
+    return footer;
   }
 }

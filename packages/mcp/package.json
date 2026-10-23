@@ -14,9 +14,9 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@hivemind/types": "workspace:*",
-    "@hivemind/core": "workspace:*",
-    "@hivemind/pack": "workspace:*",
+    "@hivemind/types": "*",
+    "@hivemind/core": "*",
+    "@hivemind/pack": "*",
     "@modelcontextprotocol/sdk": "^1.6.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",

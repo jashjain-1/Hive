@@ -1,20 +1,17 @@
-import { NodeRecord, TaskCandidate, LinkRelation } from '@hivemind/types';
+import { NodeRecord, TaskCandidate, LinkRelation, IntentAnalysis, QueryIntent, NodeProofEntry } from '@hivemind/types';
 import { LocalEmbeddingEngine } from './embeddings';
 
 /**
- * Task-Aware Multi-Factor Relevance Ranker
+ * Task-Aware Multi-Factor Relevance Ranker with Adaptive Intent Weighting
  *
- * S(n, Q) = 0.40 * S_bm25(n, Q) + 0.40 * S_vec(n, Q) + 0.20 * S_graph(n, Q)
+ * S(n, Q) = w_bm25 * S_bm25(n, Q) + w_vec * S_vec(n, Q) + w_graph * S_graph(n, Q)
  *
- * Weights:
- *   w_bm25  = 0.40  Lexical retrieval score
- *   w_vec   = 0.40  Dense semantic similarity
- *   w_graph = 0.20  Call graph topology connectivity
+ * Dynamic Intent Weighting:
+ *   - lexical:    w_bm25=0.65, w_vec=0.20, w_graph=0.15 (exact symbol / filename matches)
+ *   - semantic:   w_bm25=0.15, w_vec=0.65, w_graph=0.20 (conceptual & natural language queries)
+ *   - relational: w_bm25=0.20, w_vec=0.30, w_graph=0.50 (callers, dependencies, impact analysis)
+ *   - hybrid:     w_bm25=0.40, w_vec=0.40, w_graph=0.20 (balanced default)
  */
-
-const W_BM25 = 0.40;
-const W_VEC = 0.40;
-const W_GRAPH = 0.20;
 
 // Graph topology connectivity thresholds
 const GRAPH_HOP1_THRESHOLD = 0.85;
@@ -28,32 +25,90 @@ export class RelevanceRanker {
   constructor(private embeddings: LocalEmbeddingEngine) {}
 
   /**
-   * Score all candidates against a task query.
-   * @param candidates  List of nodes to score
-   * @param taskQuery   The user's task description
-   * @param bm25Results Pre-computed BM25 results from FTS5 (id -> score)
-   * @param graphLinks  Adjacency map: nodeId -> [{ dst, rel }]
-   * @param modifiedIds Set of node IDs modified in active git working tree
+   * Classify user task query intent and return optimal weight distribution.
+   */
+  classifyIntent(query: string): IntentAnalysis {
+    const trimmed = query.trim();
+    const words = trimmed.split(/\s+/);
+
+    // Detect exact code symbol patterns (camelCase, PascalCase, snake_case, file extensions, function calls)
+    // Call expressions are matched first so the parentheses are preserved (e.g. "verifyJwt()").
+    const symbolRegex = /\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\(\)|\b[A-Za-z0-9_]+(?:\.[a-zA-Z0-9]+|_[a-zA-Z0-9]+|[a-z]+[A-Z][a-zA-Z0-9]*|[A-Z][a-z0-9]+[A-Z][a-zA-Z0-9]*)\b/g;
+    const detectedSymbols = Array.from(new Set(trimmed.match(symbolRegex) || []));
+
+    // Relational / blast-radius keywords
+    const relationalKeywords = ['call', 'caller', 'calls', 'called', 'depend', 'dependency', 'blast', 'radius', 'impact', 'reference', 'import', 'used by', 'trace'];
+    const isRelational = relationalKeywords.some(k => query.toLowerCase().includes(k));
+
+    // Conceptual / semantic keywords
+    const semanticKeywords = ['how', 'why', 'architecture', 'overview', 'design', 'concept', 'explain', 'understand', 'workflow', 'pipeline'];
+    const isSemantic = semanticKeywords.some(k => query.toLowerCase().includes(k));
+
+    let intent: QueryIntent = 'hybrid';
+    let weights = { bm25: 0.40, vector: 0.40, graph: 0.20 };
+    let confidence = 0.70;
+
+    if (isRelational) {
+      intent = 'relational';
+      weights = { bm25: 0.20, vector: 0.30, graph: 0.50 };
+      confidence = 0.90;
+    } else if (detectedSymbols.length >= 2 || (detectedSymbols.length === 1 && words.length <= 4)) {
+      intent = 'lexical';
+      weights = { bm25: 0.65, vector: 0.20, graph: 0.15 };
+      confidence = 0.88;
+    } else if (isSemantic && detectedSymbols.length === 0) {
+      intent = 'semantic';
+      weights = { bm25: 0.15, vector: 0.65, graph: 0.20 };
+      confidence = 0.85;
+    }
+
+    return {
+      intent,
+      confidence,
+      weights,
+      detectedSymbols
+    };
+  }
+
+  /**
+   * Score all candidates against a task query with adaptive intent weights.
+   * Reuses pre-computed vectors and offloaded vector index results.
    */
   async scoreCandidates(
     candidates: NodeRecord[],
     taskQuery: string,
     bm25Results: Map<string, number>,
     graphLinks: Map<string, Array<{ dst: string; rel: LinkRelation }>>,
-    modifiedIds: Set<string> = new Set()
+    modifiedIds: Set<string> = new Set(),
+    externalVecScores?: Map<string, number>
   ): Promise<TaskCandidate[]> {
-    const taskVec = await this.embeddings.embed(taskQuery);
+    const intentAnalysis = this.classifyIntent(taskQuery);
+    const { bm25: wBm25, vector: wVec, graph: wGraph } = intentAnalysis.weights;
 
+    const taskVec = await this.embeddings.embed(taskQuery);
     const scored: TaskCandidate[] = [];
 
-    // Pre-compute vector similarity for all candidates with embeddings
+    // 1. Resolve vector scores: use external offloaded scores if available,
+    // otherwise use pre-stored node.embedding, falling back to batch embedding for missing nodes
     const vecScores = new Map<string, number>();
-    const candidatesWithEmbeddings = candidates.filter(n => n.embedding);
-    if (candidatesWithEmbeddings.length > 0) {
-      const texts = candidatesWithEmbeddings.map(n => n.l0 + ' ' + (n.l1 ?? '') + ' ' + (n.l2 ?? ''));
-      const embeddings = await this.embeddings.embedBatch(texts);
-      for (let i = 0; i < candidatesWithEmbeddings.length; i++) {
-        vecScores.set(candidatesWithEmbeddings[i].id, this.embeddings.cosineSimilarity(taskVec, embeddings[i]));
+
+    const missingEmbeddingNodes: NodeRecord[] = [];
+    for (const node of candidates) {
+      if (externalVecScores && externalVecScores.has(node.id)) {
+        vecScores.set(node.id, externalVecScores.get(node.id)!);
+      } else if (node.embedding) {
+        vecScores.set(node.id, this.embeddings.cosineSimilarity(taskVec, node.embedding));
+      } else {
+        missingEmbeddingNodes.push(node);
+      }
+    }
+
+    if (missingEmbeddingNodes.length > 0) {
+      const texts = missingEmbeddingNodes.map(n => n.l0 + ' ' + (n.l1 ?? '') + ' ' + (n.l2 ?? ''));
+      const generatedEmbeddings = await this.embeddings.embedBatch(texts);
+      for (let i = 0; i < missingEmbeddingNodes.length; i++) {
+        const sim = this.embeddings.cosineSimilarity(taskVec, generatedEmbeddings[i]);
+        vecScores.set(missingEmbeddingNodes[i].id, sim);
       }
     }
 
@@ -74,18 +129,34 @@ export class RelevanceRanker {
       // 3. Graph topology connectivity
       const graphScore = this.computeGraphScore(node.id, graphLinks, vecScores, maxVecScore);
 
-      // Composite score
-      let composite = W_BM25 * bm25Normalized + W_VEC * vecScore + W_GRAPH * graphScore;
+      // Composite score via dynamic intent weights
+      let composite = wBm25 * bm25Normalized + wVec * vecScore + wGraph * graphScore;
 
       // Active development boost
-      if (modifiedIds.has(node.id) || modifiedIds.has(node.filePath ?? '')) {
+      if (modifiedIds.has(node.id) || (node.filePath && modifiedIds.has(node.filePath))) {
         composite = Math.min(1.0, ACTIVE_DEVELOPMENT_BOOST * composite);
       }
 
-      // Subsystem domain boost (2.0x for matching subsystem)
-      // (Applied later in knapsack; here we just note it)
+      // Cluster key resolution for Bi-Level clustering
+      const clusterKey = this.resolveClusterKey(node);
 
-      // MMR diversity penalty will be applied in knapsack
+      const marginalGain = (composite * 0.25) / Math.max(1, node.tokL0);
+
+      const proofEntry: NodeProofEntry = {
+        nodeId: node.id,
+        name: node.name,
+        clusterKey,
+        bm25Raw,
+        bm25Norm: bm25Normalized,
+        vecScore,
+        graphScore,
+        compositeScore: composite,
+        intentWeights: intentAnalysis.weights,
+        marginalGain,
+        chosenLevel: 0,
+        status: 'INCLUDED',
+        decisionFactor: `Intent=${intentAnalysis.intent} (bm25:${wBm25.toFixed(2)}, vec:${wVec.toFixed(2)}, graph:${wGraph.toFixed(2)})`
+      };
 
       scored.push({
         node,
@@ -95,18 +166,32 @@ export class RelevanceRanker {
         vecScore,
         graphScore,
         costTokens: node.tokL0,
-        marginalGain: composite * 0.25 / node.tokL0, // cov[0] = 0.25
-        reason: this.buildReason(node, composite, bm25Normalized, vecScore, graphScore)
+        marginalGain,
+        reason: this.buildReason(node, composite, bm25Normalized, vecScore, graphScore, intentAnalysis.intent),
+        clusterKey,
+        proofEntry
       });
     }
 
     return scored.sort((a, b) => b.score - a.score);
   }
 
+  private resolveClusterKey(node: NodeRecord): string {
+    if (node.subsystem && node.subsystem.trim().length > 0) {
+      return `subsystem:${node.subsystem}`;
+    }
+    if (node.filePath) {
+      const parts = node.filePath.replace(/\\/g, '/').split('/');
+      if (parts.length > 1) {
+        return `module:${parts[0] === '.' ? parts[1] : parts[0]}`;
+      }
+      return `file:${node.filePath}`;
+    }
+    return `tree:${node.tree}`;
+  }
+
   private normalizeBm25(rawScore: number, candidates: NodeRecord[]): number {
     if (candidates.length === 0) return 0;
-    // BM25 scores from FTS5 are relative; normalize against the max observed
-    // In practice, we'd track the global max, but here we use a soft clamp
     return Math.min(1.0, rawScore / 10.0);
   }
 
@@ -148,13 +233,14 @@ export class RelevanceRanker {
     composite: number,
     bm25: number,
     vec: number,
-    graph: number
+    graph: number,
+    intent: QueryIntent
   ): string {
     const parts: string[] = [];
-    if (bm25 > 0.3) parts.push(`BM25=${bm25.toFixed(2)}`);
-    if (vec > 0.3) parts.push(`vecSim=${vec.toFixed(2)}`);
+    if (bm25 > 0.25) parts.push(`bm25=${bm25.toFixed(2)}`);
+    if (vec > 0.25) parts.push(`vec=${vec.toFixed(2)}`);
     if (graph > 0) parts.push(`graph=${graph.toFixed(1)}`);
     const detail = parts.length > 0 ? ` (${parts.join(', ')})` : '';
-    return `Relevance ${composite.toFixed(2)}${detail} | ${node.kind} ${node.name}`;
+    return `Relevance ${composite.toFixed(2)} [${intent}]${detail} | ${node.kind} ${node.name}`;
   }
 }
