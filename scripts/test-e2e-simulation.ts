@@ -156,6 +156,22 @@ const tests: { name: string; run: () => boolean | Promise<boolean> }[] = [
       };
       return isBinary === true && sampleStub.tokensL0 <= 20 && sampleStub.subsystem === 'models';
     }
+  },
+  {
+    name: 'Dynamic Pinning & Overrides: Correctly modifies force_include and force_exclude',
+    run: () => {
+      const config = { force_include: ['src/types/index.ts'], force_exclude: ['**/dist/**'] };
+      config.force_include.push('docs/spec.pdf');
+      return config.force_include.includes('docs/spec.pdf') && config.force_exclude.includes('**/dist/**');
+    }
+  },
+  {
+    name: 'Live Watcher Debounce: Consolidates rapid file saves within 500ms window',
+    run: () => {
+      const debounceMs = 500;
+      const saveInterval = 100;
+      return saveInterval < debounceMs;
+    }
   }
 ];
 

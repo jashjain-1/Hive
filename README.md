@@ -256,9 +256,9 @@ Evaluation performed across SWE-bench coding tasks and multi-module monorepos:
 
 ---
 
-## 9. MCP Tool Catalog (11 Tools)
+## 9. MCP Tool Catalog (12 Tools)
 
-Total upfront schema footprint across all eleven tools is constrained to $< 600$ tokens:
+Total upfront schema footprint across all twelve tools is constrained to $< 600$ tokens:
 
 | Tool | Signature | Function |
 |---|---|---|
@@ -268,6 +268,7 @@ Total upfront schema footprint across all eleven tools is constrained to $< 600$
 | `pack` | `(task, budget?, explain?)` | Compile optimal context bundle within token budget with 10% reserve slack. |
 | `explain` | `(node, task?)` | Detailed 1-line verification explaining why a node was selected or deferred. |
 | `impact` | `(target?)` | Git diff blast-radius impact analysis evaluating modified symbols and callers. |
+| `pin` | `(target, action)` | Dynamic context override: force-include, force-exclude, or clear pins. |
 | `next` | `(node, task?)` | Human-mind associative next-hop recommendation. |
 | `write` | `(parent, kind, name, content)` | Insert or update note, decision, or tombstone with CAS version validation. |
 | `task` | `(verb, id, payload?)` | Multi-agent coordination (`claim`, `report`, `handoff`). |

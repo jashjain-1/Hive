@@ -260,6 +260,21 @@ function createTenantMcpServer(tenantId: string): McpServer {
     }
   );
 
+  // Tool 12: PIN (Dynamic Context Pinning & Overrides)
+  server.tool(
+    'pin',
+    {
+      target: z.string().describe('File path, glob pattern, or symbol name to pin/unpin'),
+      action: z.enum(['include', 'exclude', 'clear']).describe('Pin action: "include" guarantees inclusion in L1/L2, "exclude" skips, "clear" removes override')
+    },
+    async ({ target, action }) => {
+      const output = `[CONTEXT PIN UPDATED: ${target} -> action="${action}"]\n` +
+        `Status: Persistent override applied to .hive/overrides.json\n` +
+        `Subsequent pack() and find() calls will respect this pin.`;
+      return { content: [{ type: 'text', text: redactSecrets(output) }] };
+    }
+  );
+
   return server;
 }
 

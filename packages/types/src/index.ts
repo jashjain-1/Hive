@@ -225,6 +225,23 @@ export interface OverridesConfig {
   force_exclude: string[];
 }
 
+export type PinAction = 'include' | 'exclude' | 'clear';
+
+export interface PinRequest {
+  target: string;                           // File path, glob, or symbol name
+  action: PinAction;
+}
+
+export interface PinResponse {
+  target: string;
+  action: PinAction;
+  activeIncludes: string[];
+  activeExcludes: string[];
+  message: string;
+}
+
+export type ModelFamily = 'anthropic' | 'openai' | 'gemini' | 'generic';
+
 // ============================================================================
 // 4.1 HUMAN-MIND ASSOCIATIVE NAVIGATION (NEXT-HOP PREDICTION)
 // ============================================================================

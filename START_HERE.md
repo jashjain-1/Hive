@@ -72,7 +72,7 @@ Hive/
 │   ├── types/          # SHARED: Master TypeScript contracts and DTOs
 │   ├── core/           # KOMAL: Storage (SQLite WAL), Tree-sitter AST, Document Chunker, Git Impact
 │   ├── pack/           # ANJALI: Ranker, Local Embeddings, Knapsack Compiler, Next-Hop, ROI Ledger
-│   └── mcp/            # JASH: MCP Server (Stdio & SSE), 11 Tools, Window Protocol, Cloud Gateway
+│   └── mcp/            # JASH: MCP Server (Stdio & SSE), 12 Tools, Window Protocol, Cloud Gateway
 ├── .hive/
 │   ├── overrides.json  # Context pins (force_include / force_exclude)
 │   ├── tenants/        # Multi-tenant isolated databases (git-ignored)
