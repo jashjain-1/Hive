@@ -289,11 +289,11 @@ app.get('/sse', async (req: Request, res: Response) => {
   const sessionId = transport.sessionId;
   activeTransports.set(sessionId, transport);
 
-  console.log(`🔌 [SSE Connected] Client connected. Session: ${sessionId} | Tenant: ${tenantId}`);
+  console.log(`[SSE Connected] Client connected. Session: ${sessionId} | Tenant: ${tenantId}`);
 
   req.on('close', () => {
     activeTransports.delete(sessionId);
-    console.log(`❌ [SSE Disconnected] Client disconnected. Session: ${sessionId}`);
+    console.log(`[SSE Disconnected] Client disconnected. Session: ${sessionId}`);
   });
 });
 
@@ -322,10 +322,9 @@ app.post('/index-repo', async (req: Request, res: Response) => {
 
   const safeTenantId = tenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-  console.log(`📥 [Streaming Indexer] Starting indexing for repo: ${repoUrl} (Tenant: ${safeTenantId})`);
-  console.log(`⚡ [Streaming Pipeline] No repo size cap enabled. Streaming AST parsing and batch SQLite commits active.`);
+  console.log(`[Streaming Indexer] Starting indexing for repo: ${repoUrl} (Tenant: ${safeTenantId})`);
+  console.log(`[Streaming Pipeline] No repo size cap enabled. Streaming AST parsing and batch SQLite commits active.`);
 
-  // Ephemeral handling: githubToken is used in-memory only and never logged or written to disk
   res.json({
     status: 'indexing_started',
     tenantId: safeTenantId,
@@ -336,8 +335,8 @@ app.post('/index-repo', async (req: Request, res: Response) => {
 
 // Start Server
 app.listen(PORT, () => {
-  console.log(`🚀 [Hivemind Hosted MCP Server] Listening on port ${PORT}`);
-  console.log(`🌐 Public SSE URL: http://localhost:${PORT}/sse?tenantId=default`);
-  console.log(`🛡️  Security: Per-tenant SQLite isolation active in ${TENANTS_DIR}`);
-  console.log(`📦 Capacity: No repository size cap. Streaming AST chunking enabled.`);
+  console.log(`[Hivemind Hosted MCP Server] Listening on port ${PORT}`);
+  console.log(`Public SSE URL: http://localhost:${PORT}/sse?tenantId=default`);
+  console.log(`Security: Per-tenant SQLite isolation active in ${TENANTS_DIR}`);
+  console.log(`Capacity: No repository size cap. Streaming AST chunking enabled.`);
 });

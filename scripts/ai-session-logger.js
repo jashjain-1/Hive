@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Git Pre-Push / Pre-Commit Validation Hook for Hivemind
+ * Git Pre-Push Validation Hook for Hivemind
  * 
  * Verifies:
  * 1. An active AI session log exists in .hive/sessions/ updated within the last 24 hours.
@@ -16,14 +16,14 @@ const { execSync } = require('child_process');
 const SESSIONS_DIR = path.join(__dirname, '..', '.hive', 'sessions');
 const HIVE_DIR = path.join(__dirname, '..', '.hive');
 
-console.log('🐝 [Hivemind Git Check] Running pre-push safe validation...');
+console.log('[Hivemind Git Check] Running pre-push safe validation...');
 
 // 1. Check for forbidden DB files in git staging
 try {
   const stagedFiles = execSync('git diff --cached --name-only', { encoding: 'utf8' }).split('\n');
   const dbStaged = stagedFiles.some(f => f.endsWith('.db') || f.endsWith('.db-wal') || f.endsWith('.db-shm'));
   if (dbStaged) {
-    console.error('❌ [Error] Forbidden SQLite database file staged for commit! DB files must never be committed.');
+    console.error('[ERROR] Forbidden SQLite database file staged for commit! DB files must never be committed.');
     process.exit(1);
   }
 } catch (e) {
@@ -45,14 +45,14 @@ for (const file of files) {
   const stats = fs.statSync(filePath);
   if (stats.mtimeMs > oneDayAgo) {
     hasRecentSession = true;
-    console.log(`✅ [Session Log Verified] Recent session log found: ${file}`);
+    console.log(`[PASS] Recent session log verified: ${file}`);
     break;
   }
 }
 
 if (!hasRecentSession && files.length > 0) {
-  console.warn('⚠️  [Warning] No AI session log found in .hive/sessions/ updated in the last 24 hours.');
-  console.warn('👉 Please create or update your session log (e.g., .hive/sessions/YYYYMMDD-<author>-<task>.md) before pushing.');
+  console.warn('[WARN] No AI session log found in .hive/sessions/ updated in the last 24 hours.');
+  console.warn('Action required: Please create or update your session log in .hive/sessions/YYYYMMDD-<author>-<task>.md before pushing.');
 }
 
-console.log('✨ [Hivemind Git Check] Validation complete.');
+console.log('[Hivemind Git Check] Validation complete.');

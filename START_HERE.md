@@ -2,102 +2,103 @@
 
 Welcome to the **Hivemind Context Engine** repository.
 
-This project is a high-performance, token-efficient Model Context Protocol (MCP) server that provides AI coding agents with hierarchical context trees, fine-grained AST chunking, task-aware file/chunk prioritization, explainable context selection, and persistent graph caching.
+This project is a token-lean Model Context Protocol (MCP) server that equips AI coding agents with hierarchical context trees, sub-file Abstract Syntax Tree (AST) chunking, task-aware file/chunk prioritization, explainable context selection, universal document ingestion, and persistent graph caching.
 
 ---
 
-## 1. Quick Project Summary
+## 1. Project Summary
 
-- **Primary Goal**: Maximize useful work per token; stop agents from wasting 80% of their context window on irrelevant files and whole-file dumping.
-- **Hosted Public Product**: **100% Free Cloud Deployment** on Render Free Tier via Docker (`render.yaml`).
-- **Engine Protocol**: Model Context Protocol (MCP) over **Server-Sent Events (SSE)** (for public cloud hosting) and **Stdio** (for local CLI).
-- **Scale**: **No Repository Size Cap** — streams files sequentially with batch SQLite commits, effortlessly indexing giant monorepos and multi-gigabyte codebases.
-- **Universal Multi-Format Ingestion**: Indexes **all file types** — source code, `.pdf` (pages/chapters), `.pptx` (slides & speaker notes), `.docx` (sections/headings), and `.xlsx`/`.csv` (sheets & column schemas).
-- **Human-Mind Associative Navigation**: Connects slides/docs to code via bidirectional cross-links (`mentions`, `implements`, `specifies`) and predicts **what file/chunk the agent should view next** via an associative pointer footer and the `next(node, task)` tool.
-- **Storage**: Isolated SQLite WAL database per tenant (`.hive/tenants/<tenantId>.db`) for zero cross-tenant leakage.
-- **Intelligence**: WebAssembly Tree-sitter AST chunker (functions/classes) + Local ONNX vector embeddings (`@xenova/transformers`, zero API key required) + SQLite FTS5 BM25.
-- **Security**: Ephemeral GitHub tokens held strictly in-memory during indexing, rate-limiting, and Helmet security headers.
+* **Objective**: Maximize useful work per token; prevent agents from wasting context windows on whole-file dumps and speculative grepping.
+* **Protocol**: Model Context Protocol (MCP) over **Server-Sent Events (SSE)** (for remote cloud hosting) and **Stdio** (for local CLI execution).
+* **Storage**: Isolated SQLite database in Write-Ahead Logging (WAL) mode per tenant (`.hive/tenants/<tenantId>.db`) for zero cross-tenant leakage.
+* **Intelligence**: WebAssembly Tree-sitter AST chunker + local ONNX embeddings (`@xenova/transformers`, `bge-small-en-v1.5`, zero external API calls) + SQLite FTS5 lexical ranking.
+* **Scope**: **100% Backend Engine**. No frontend/UI overhead.
+* **Scale**: **No Repository Size Cap** — streams files sequentially with batch SQLite commits, effortlessly indexing monorepos and multi-gigabyte codebases.
+* **Security**: Ephemeral GitHub tokens held strictly in volatile RAM, in-flight secrets redaction, rate limiting, and Helmet security headers.
 
 ---
 
-## 2. One-Click Free Cloud Deployment (Render)
+## 2. Multi-Format Support and Associative Navigation
 
-Deploy your own live, public Hivemind MCP server for **$0.00/month** (no credit card required):
+```mermaid
+flowchart LR
+    subgraph Formats["Supported File Formats"]
+        SourceCode["Source Code (.ts, .py, etc.)"]
+        PDF["PDF Documents (.pdf)"]
+        PPTX["PowerPoint Slides (.pptx)"]
+        DOCX["Word Documents (.docx)"]
+        XLSX["Spreadsheets (.xlsx, .csv)"]
+    end
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/jashjain-1/Hive)
+    subgraph Chunker["Universal Chunking Engine"]
+        SourceCode --> ASTNodes["Functions, Classes, Methods"]
+        PDF --> PDFNodes["Sections, Pages"]
+        PPTX --> PPTXNodes["Slides, Bullet Points, Notes"]
+        DOCX --> DOCXNodes["Headings, Paragraphs"]
+        XLSX --> XLSXNodes["Sheets, Column Schemas"]
+    end
 
-1. Click the button above (or create a Web Service in [render.com](https://render.com) pointing to `https://github.com/jashjain-1/Hive`).
-2. Select the **Free Instance Type**.
-3. Render will build the Docker container and give you a live HTTPS URL:
-   `https://hivemind-mcp.onrender.com`
+    subgraph CognitiveGraph["Cross-Modal Associative Graph"]
+        ASTNodes <-->|mentions / implements| PPTXNodes
+        ASTNodes <-->|specifies / documents| DOCXNodes
+        ASTNodes <-->|validates schema| XLSXNodes
+    end
+```
+
+Rather than forcing AI agents to guess file paths, Hivemind computes associative next-hop reading paths based on cognitive relation weights:
+
+$$w_{\text{specifies}} = 0.95, \quad w_{\text{implements}} = 0.92, \quad w_{\text{calls}} = 0.88, \quad w_{\text{tests}} = 0.80, \quad w_{\text{mentions}} = 0.75$$
+
+Every response includes a 3-line pointer footer ($\approx 40$ tokens) indicating the next logical files to inspect, paired with the dedicated `next(node, task)` tool.
 
 ---
 
-## 3. How Anyone Can Connect Their AI Agent (Zero Installation)
+## 3. Toolchain Prerequisites
 
-Once deployed, **anyone in the world** can plug Hivemind into their AI agent with zero local Node.js installation:
-
-| AI Agent | How to Connect |
-|---|---|
-| **Claude Desktop** | Add to `claude_desktop_config.json`: <br>```json<br>{"mcpServers": {"hivemind": {"url": "https://hivemind-mcp.onrender.com/sse?tenantId=my-project"}}}<br>``` |
-| **Cursor IDE** | Add to `.cursor/mcp.json` or Settings -> MCP: <br>Type: `SSE`, URL: `https://hivemind-mcp.onrender.com/sse?tenantId=my-project` |
-| **Antigravity / Windsurf** | Add as a remote MCP SSE server using `https://hivemind-mcp.onrender.com/sse?tenantId=my-project` |
-| **Cline / Roo Code** | Select "Add New MCP Server" -> SSE Transport -> Enter your live Render URL |
-| **Local Stdio (Offline)** | Run `node packages/mcp/dist/index.js` over standard stdio |
+Ensure the following runtimes are installed:
+* **Node.js**: `v20.x` or higher (`node -v`)
+* **Package Manager**: `npm` (v10+) or `pnpm` (`npm -v` / `pnpm -v`)
+* **Git**: Installed and configured (`git --version`)
+* **Operating System**: Windows, Linux, or macOS (all native extensions use pre-built binaries or WASM to eliminate native C++ compiler requirements).
 
 ---
 
-## 4. Hardened Multi-Tenant Security & No Size Cap
-
-1. **Per-Tenant SQLite Isolation**: Every project/tenant gets an isolated database in `.hive/tenants/<tenantId>.db`. Cross-tenant data leaks are physically impossible.
-2. **Ephemeral GitHub Tokens**: When indexing private repositories, tokens passed via `X-GitHub-Token` are held strictly in volatile RAM and immediately wiped.
-3. **No Repository Size Cap**: The streaming AST engine processes files sequentially in batches of 500 chunks, purging AST tree memory immediately to prevent out-of-memory crashes on giant codebases.
-4. **DDoS & Rate Limiting**: Built-in 60 req/min rate limiter and Helmet security headers.
-
----
-
-## 5. Monorepo Architecture & Team Ownership
-
-The project is structured as an npm/pnpm workspace with 3 core packages:
+## 4. Monorepo Architecture and Package Ownership
 
 ```
 Hive/
 ├── packages/
-│   ├── types/          # SHARED: TypeScript interfaces, DTOs, and RPC schemas
-│   ├── core/           # KOMAL: Storage (SQLite WAL), Tree-sitter AST chunker, Merkle engine
-│   ├── pack/           # ANJALI: Task-Aware ranker, Knapsack compiler, Explainable selection
-│   └── mcp/            # JASH: Protocol server, Stdio & SSE transport, 9 tools, Window P0-P4
+│   ├── types/          # SHARED: Master TypeScript contracts and DTOs
+│   ├── core/           # KOMAL: Storage (SQLite WAL), Tree-sitter AST, Document Chunker, Git Impact
+│   ├── pack/           # ANJALI: Ranker, Local Embeddings, Knapsack Compiler, Next-Hop, ROI Ledger
+│   └── mcp/            # JASH: MCP Server (Stdio & SSE), 11 Tools, Window Protocol, Cloud Gateway
 ├── .hive/
 │   ├── overrides.json  # Context pins (force_include / force_exclude)
-│   ├── tenants/        # Multi-tenant isolated SQLite WAL databases (git-ignored)
-│   └── sessions/       # Shared AI session logs (commit with every push)
-├── Dockerfile          # Production hardened container for Render
-├── render.yaml         # 1-Click Render blueprint
+│   ├── tenants/        # Multi-tenant isolated databases (git-ignored)
+│   └── sessions/       # Shared AI session logs (tracked with every push)
+├── Dockerfile          # Production hardened multi-stage container
+├── render.yaml         # Free Render deployment blueprint
 └── scripts/
-    ├── ai-session-logger.js    # Pre-push git verification hook
-    └── test-e2e-simulation.ts  # End-to-end multi-agent test simulation
+    ├── ai-session-logger.js    # Pre-push git validation hook
+    └── test-e2e-simulation.ts  # End-to-end multi-agent test suite (13/13 passing)
 ```
 
-### Team Responsibilities & AI Directives:
-1. **Jash (Project Lead / MCP Protocol & Cloud)**:
-   - Owns `packages/mcp`, `packages/types`, Docker, Render deployment, and `scripts/`.
-   - Master AI prompt: [docs/prompts/jash.md](docs/prompts/jash.md)
-2. **Anjali (Context & Intelligence Specialist)**:
-   - Owns `packages/pack`.
-   - Task-Aware Prioritization, Local Embeddings (`@xenova/transformers`), Knapsack Pack algorithm, Explainable Context Selection.
-   - Master AI prompt: [docs/prompts/anjali.md](docs/prompts/anjali.md)
-   - GitHub: [github.com/Anjali-Furia](https://github.com/Anjali-Furia)
-3. **Komal (Data Engine & AST Specialist)**:
-   - Owns `packages/core`.
-   - SQLite WAL database, Tree-sitter WASM chunker (TS/JS/Python), Merkle hash tree, Change invalidation DAG, `.hive/graph.json` auto-sync.
-   - Master AI prompt: [docs/prompts/komal.md](docs/prompts/komal.md)
-   - GitHub: [github.com/KomalMangutkar](https://github.com/KomalMangutkar)
-4. **Synthesis Integrator (Final Merge)**:
-   - Automated 3-way branch convergence protocol: [docs/prompts/final-merge.md](docs/prompts/final-merge.md)
+### Team Responsibilities and AI Directives
+* **Jash (Project Lead / MCP Protocol and Cloud)**:
+  * Owns `packages/mcp`, `packages/types`, Docker, Render deployment, and `scripts/`.
+  * Directive: `docs/prompts/jash.md`
+* **Anjali (Context and Intelligence Specialist)**:
+  * Owns `packages/pack`.
+  * Directive: `docs/prompts/anjali.md`
+* **Komal (Data Engine and AST Specialist)**:
+  * Owns `packages/core`.
+  * Directive: `docs/prompts/komal.md`
+* **Synthesis Integrator (Release Engineer)**:
+  * Directive: `docs/prompts/final-merge.md`
 
 ---
 
-## 6. Development & Testing Commands
+## 5. Development and Testing Commands
 
 ```bash
 # 1. Install all dependencies across the monorepo
@@ -106,12 +107,12 @@ npm install
 # 2. Build all packages
 npm run build
 
-# 3. Run individual package test suites (for independent AI testing)
+# 3. Run individual package test suites
 npm test -w @hivemind/core    # Tested by Komal
 npm test -w @hivemind/pack    # Tested by Anjali
 npm test -w @hivemind/mcp     # Tested by Jash
 
-# 4. Run End-to-End Multi-Agent Simulation
+# 4. Run End-to-End Multi-Agent Simulation (13 Invariants)
 node scripts/test-e2e-simulation.ts
 
 # 5. Start Hosted MCP SSE Server Locally

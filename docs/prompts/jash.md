@@ -320,7 +320,7 @@ export class HiveMcpServer {
   async start() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('🐝 [Hivemind MCP Server] Running on stdio transport.');
+    console.error('[Hivemind MCP Server] Running on stdio transport.');
   }
 }
 ```

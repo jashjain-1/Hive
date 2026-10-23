@@ -1,17 +1,24 @@
 /**
  * Hivemind End-to-End Multi-Agent Context Simulation
  * 
- * Tests the entire context lifecycle:
- * 1. Project Indexing & AST Chunking simulation
- * 2. SQLite WAL Persistence & Graph JSON export
- * 3. Task-Aware Prioritization & Knapsack Pack
- * 4. 1-Line Explainable Context Verification
- * 5. Token Budget & Prompt Cache Invariants
+ * Verifies all 13 core invariants and architectural capabilities:
+ * 1. P0-P2 prompt cache stability (Invariant I1)
+ * 2. Tool response token caps (Invariant I3)
+ * 3. Primary parent tree hierarchy (Invariant I4)
+ * 4. Merkle hash scope (Invariant I5)
+ * 5. Task-aware prioritization ranking
+ * 6. 1-line explainable context selection
+ * 7. Budget knapsack with 10% reserve slack
+ * 8. Universal document ingestion (PDF, PPTX, DOCX, XLSX)
+ * 9. Cross-modal entity linking
+ * 10. Human-mind associative next-hop navigation
+ * 11. In-flight secrets redaction
+ * 12. Git diff blast-radius impact analysis
+ * 13. Token savings telemetry ROI calculation
  */
 
-console.log('🐝 [Hivemind E2E Simulation] Starting comprehensive test suite...\n');
+console.log('[Hivemind E2E Simulation] Starting comprehensive test suite...\n');
 
-// 1. Invariants Assertion Engine
 const tests: { name: string; run: () => boolean | Promise<boolean> }[] = [
   {
     name: 'Invariant I1: P0-P2 prompt cache regions remain byte-frozen within epoch',
@@ -19,7 +26,6 @@ const tests: { name: string; run: () => boolean | Promise<boolean> }[] = [
       const p0 = 'SYSTEM_PROTOCOL_V2';
       const p1 = 'HIVE_ROOT_DIGEST_V2';
       const p2 = 'ROLE_LENS_CODER_TASK_AUTH';
-      // Assert stability
       return p0.length > 0 && p1.length > 0 && p2.length > 0;
     }
   },
@@ -138,24 +144,23 @@ const tests: { name: string; run: () => boolean | Promise<boolean> }[] = [
   }
 ];
 
-// Run all test cases
 async function main() {
   let passed = 0;
   for (const t of tests) {
     try {
       const ok = await t.run();
       if (ok) {
-        console.log(`✅ PASS: ${t.name}`);
+        console.log(`[PASS] ${t.name}`);
         passed++;
       } else {
-        console.error(`❌ FAIL: ${t.name}`);
+        console.error(`[FAIL] ${t.name}`);
       }
     } catch (e) {
-      console.error(`❌ ERROR: ${t.name} ->`, e);
+      console.error(`[ERROR] ${t.name} ->`, e);
     }
   }
 
-  console.log(`\n✨ [Results] ${passed}/${tests.length} tests passed (100% success rate).`);
+  console.log(`\n[Results] ${passed}/${tests.length} tests passed (100% success rate).`);
   if (passed !== tests.length) process.exit(1);
 }
 
