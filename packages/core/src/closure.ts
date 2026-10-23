@@ -2,34 +2,74 @@ import Database from 'better-sqlite3';
 import { TreeType } from '@hivemind/types';
 
 /**
- * Transitive Closure Table Maintenance
+ * Transitive Closure Table Maintenance.
  *
- * Maintains ancestor/descendant relationships for instant subtree querying.
- * Supports depth-bounded traversal and fast "is descendant of" checks.
+ * Maintains ancestor/descendant relationships for subtree queries.
  */
 
 export function rebuildClosure(db: Database.Database, tree: TreeType): void {
-  // Clear existing closure entries for this tree
-  db.prepare('DELETE FROM closure WHERE tree = ?').run(tree);
-
-  const insertClosure = db.prepare(`
-    INSERT OR IGNORE INTO closure (tree, anc, desc, depth) VALUES (?, ?, ?, ?)
-  `);
-
-  const allNodes = db.prepare('SELECT id, parent FROM nodes WHERE tree = ?').all(tree) as Array<{ id: string; parent: string | null }>;
-
   const tx = db.transaction(() => {
+    // Clear and rebuild atomically.
+    db.prepare('DELETE FROM closure WHERE tree = ?').run(tree);
+
+    const insertClosure = db.prepare(`
+      INSERT INTO closure (tree, anc, desc, depth)
+      VALUES (?, ?, ?, ?)
+    `);
+
+    const allNodes = db.prepare(`
+      SELECT id, parent
+      FROM nodes
+      WHERE tree = ?
+    `).all(tree) as Array<{
+      id: string;
+      parent: string | null;
+    }>;
+
+    const parentLookup = new Map<string, string | null>();
+
     for (const node of allNodes) {
-      // Self-reference (depth 0)
+      parentLookup.set(node.id, node.parent);
+    }
+
+    for (const node of allNodes) {
+      // Every node is its own ancestor at depth zero.
       insertClosure.run(tree, node.id, node.id, 0);
 
-      // Walk up to root collecting ancestors
-      let current: string | null = node.parent;
+      let current = node.parent;
       let depth = 1;
+      const visited = new Set<string>([node.id]);
+
       while (current) {
+        if (visited.has(current)) {
+          throw new Error(
+            `Parent cycle detected while rebuilding closure for node "${node.id}".`
+          );
+        }
+
+        const parentTree = db.prepare(`
+          SELECT tree FROM nodes WHERE id = ?
+        `).get(current) as { tree: string } | undefined;
+
+        if (!parentTree) {
+          throw new Error(
+            `Parent "${current}" does not exist for node "${node.id}".`
+          );
+        }
+
+        if (parentTree.tree !== tree) {
+          throw new Error(
+            `Parent "${current}" belongs to a different tree.`
+          );
+        }
+
+        visited.add(current);
         insertClosure.run(tree, current, node.id, depth);
-        const parentRow = db.prepare('SELECT parent FROM nodes WHERE id = ?').get(current) as { parent: string | null } | undefined;
-        current = parentRow?.parent ?? null;
+
+        current = parentLookup.has(current)
+          ? parentLookup.get(current) ?? null
+          : null;
+
         depth++;
       }
     }
@@ -38,35 +78,79 @@ export function rebuildClosure(db: Database.Database, tree: TreeType): void {
   tx();
 }
 
-/** Check if descNode is a descendant of ancNode in the given tree */
-export function isDescendant(db: Database.Database, tree: TreeType, ancNode: string, descNode: string): boolean {
+/** Check if descNode is a descendant of ancNode. */
+export function isDescendant(
+  db: Database.Database,
+  tree: TreeType,
+  ancNode: string,
+  descNode: string
+): boolean {
   const row = db.prepare(`
-    SELECT 1 FROM closure WHERE tree = ? AND anc = ? AND desc = ? AND depth > 0
+    SELECT 1
+    FROM closure
+    WHERE tree = ?
+      AND anc = ?
+      AND desc = ?
+      AND depth > 0
   `).get(tree, ancNode, descNode);
+
   return !!row;
 }
 
-/** Get all descendants of a node with depth info */
-export function getDescendants(db: Database.Database, tree: TreeType, ancestorId: string, maxDepth?: number): Array<{ id: string; depth: number }> {
+/** Get descendants, optionally limited by depth. */
+export function getDescendants(
+  db: Database.Database,
+  tree: TreeType,
+  ancestorId: string,
+  maxDepth?: number
+): Array<{ id: string; depth: number }> {
   if (maxDepth !== undefined) {
+    if (!Number.isInteger(maxDepth) || maxDepth < 0) {
+      throw new Error('maxDepth must be a non-negative integer.');
+    }
+
     return db.prepare(`
-      SELECT desc as id, depth FROM closure
-      WHERE tree = ? AND anc = ? AND depth > 0 AND depth <= ?
+      SELECT desc AS id, depth
+      FROM closure
+      WHERE tree = ?
+        AND anc = ?
+        AND depth > 0
+        AND depth <= ?
       ORDER BY depth
-    `).all(tree, ancestorId, maxDepth) as Array<{ id: string; depth: number }>;
+    `).all(tree, ancestorId, maxDepth) as Array<{
+      id: string;
+      depth: number;
+    }>;
   }
+
   return db.prepare(`
-    SELECT desc as id, depth FROM closure
-    WHERE tree = ? AND anc = ? AND depth > 0
+    SELECT desc AS id, depth
+    FROM closure
+    WHERE tree = ?
+      AND anc = ?
+      AND depth > 0
     ORDER BY depth
-  `).all(tree, ancestorId) as Array<{ id: string; depth: number }>;
+  `).all(tree, ancestorId) as Array<{
+    id: string;
+    depth: number;
+  }>;
 }
 
-/** Get all ancestors of a node with depth info */
-export function getAncestors(db: Database.Database, tree: TreeType, descendantId: string): Array<{ id: string; depth: number }> {
+/** Get ancestors of a node, ordered from farthest to nearest. */
+export function getAncestors(
+  db: Database.Database,
+  tree: TreeType,
+  descendantId: string
+): Array<{ id: string; depth: number }> {
   return db.prepare(`
-    SELECT anc as id, depth FROM closure
-    WHERE tree = ? AND desc = ? AND depth > 0
+    SELECT anc AS id, depth
+    FROM closure
+    WHERE tree = ?
+      AND desc = ?
+      AND depth > 0
     ORDER BY depth DESC
-  `).all(tree, descendantId) as Array<{ id: string; depth: number }>;
+  `).all(tree, descendantId) as Array<{
+    id: string;
+    depth: number;
+  }>;
 }
