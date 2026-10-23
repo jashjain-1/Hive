@@ -13,7 +13,10 @@ You are the lead architect and systems engineer working with Jash on `packages/m
 
 ### 1. STRICT DOMAIN BOUNDARY & RESPONSIBILITY
 You own:
-- Model Context Protocol (MCP) server implementation via Stdio transport (`packages/mcp/src/server.ts`).
+- Model Context Protocol (MCP) server implementation via Stdio AND Server-Sent Events (SSE) (`packages/mcp/src/server.ts` & `packages/mcp/src/sse-server.ts`).
+- Production Dockerfile and 1-click Render blueprint (`render.yaml`) for 100% free public hosting.
+- Multi-Tenant Zero-Trust Isolation: Per-tenant SQLite databases (`.hive/tenants/<tenantId>.db`) with zero cross-tenant leakage.
+- Arbitrary repository size support via streaming AST ingestion and chunked SQLite commits (No repository size cap).
 - 9 Core Tool definitions and input/output validation schemas using Zod (`packages/mcp/src/tools/`).
 - Window Protocol P0–P4 state machine, client window registry, and Epoch compaction (`packages/mcp/src/window/`).
 - CLI executable entry point `hive-mcp` for instant execution across Claude Desktop, Cursor, Antigravity, and Windsurf (`packages/mcp/src/index.ts`).

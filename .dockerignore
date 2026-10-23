@@ -1,0 +1,8 @@
+node_modules/
+.git/
+.hive/*.db
+.hive/*.db-wal
+.hive/*.db-shm
+dist/
+coverage/
+*.log
