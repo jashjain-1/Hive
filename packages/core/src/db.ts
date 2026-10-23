@@ -89,9 +89,16 @@ export function insertNode(
   node: Omit<NodeRecord, 'ver'> & { ver?: number }
 ): NodeRecord {
   const now = Date.now();
-  const existing = db.prepare('SELECT ver FROM nodes WHERE id = ?').get(node.id) as { ver: number } | undefined;
-  const expectedVer = existing ? existing.ver : 0;
-  const newVer = (node.ver ?? expectedVer + 1);
+
+const existing = db.prepare(
+  'SELECT id FROM nodes WHERE id = ?'
+).get(node.id);
+
+if (existing) {
+  throw new Error(`Node with ID "${node.id}" already exists.`);
+}
+
+const newVer = node.ver ?? 1;
 
   const stmt = db.prepare(`
     INSERT INTO nodes (id, tree, parent, kind, name, filePath, startLine, endLine, status, ver, hash, linkHash, l0, l1, l2, blobHash, tokL0, tokL1, tokL2, embedding, stale, createdAt, updatedAt)
@@ -118,7 +125,13 @@ export function insertNode(
     node.tokL0,
     node.tokL1 ?? 0,
     node.tokL2 ?? 0,
-    node.embedding ? Buffer.from(node.embedding.buffer) : null,
+    node.embedding
+  ? Buffer.from(
+      node.embedding.buffer,
+      node.embedding.byteOffset,
+      node.embedding.byteLength
+    )
+  : null,
     node.stale ? 1 : 0,
     node.createdAt ?? now,
     node.updatedAt ?? now
@@ -153,7 +166,13 @@ export function casUpdateNode(
     updates.stale !== undefined ? (updates.stale ? 1 : 0) : null,
     updates.hash ?? null,
     updates.linkHash ?? null,
-    updates.embedding ? Buffer.from(updates.embedding.buffer) : null,
+    updates.embedding
+  ? Buffer.from(
+      updates.embedding.buffer,
+      updates.embedding.byteOffset,
+      updates.embedding.byteLength
+    )
+  : null,
     Date.now(),
     id,
     expectedVer
@@ -185,7 +204,7 @@ export function ftsSearch(db: Database.Database, query: string, limit = 50): Arr
     SELECT id, name, l0, bm25(nodes_fts) as bm25
     FROM nodes_fts
     WHERE nodes_fts MATCH ?
-    ORDER BY bm25 DESC
+    ORDER BY bm25 ASC
     LIMIT ?
   `).all(query, limit) as Array<{ id: string; name: string; l0: string; bm25: number }>;
 }
