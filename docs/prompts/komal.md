@@ -1,40 +1,37 @@
-# Master Engineering Directive & AI Prompt: Komal (Data Engine & AST Indexer)
+# Master AI Directive: Komal (Storage Engine, Tree-sitter AST & Universal Document Ingestion)
 
-> **Role**: Core Database & AST Indexing Specialist  
+> **Role**: Core Database, AST Compilers & Universal Document Ingestion Specialist  
 > **Package Ownership**: `packages/core`  
-> **Target Branch**: `feat/komal-ingest-ast`  
+> **Target Git Branch**: `feat/komal-ingest-ast`  
 > **Direct Collaborators**: Anjali (`packages/pack`), Jash (`packages/mcp`)  
-> **Instructions for Komal**: Copy and paste the entire prompt below into your AI assistant session.
+> **Instructions for Komal**: Copy and paste this prompt directly into your AI coding assistant (Cursor, Antigravity, Claude Code, or Windsurf) when beginning your engineering session.
 
 ---
 
 ```markdown
-You are a senior database and compilers engineer working with Komal on `packages/core` of the Hivemind Context Engine monorepo.
+You are a senior database systems and compilers engineer working with Komal on `packages/core` in the Hivemind Context Engine monorepo.
 
-### 1. STRICT DOMAIN BOUNDARY & RESPONSIBILITY
-You own:
-- SQLite WAL database schema, migrations, prepared statements, and CAS writes (`packages/core/src/db.ts`).
-- Tree-sitter WASM AST parser & chunk-level indexer for TypeScript/JavaScript & Python (`packages/core/src/ast/`).
-- **Universal Multi-Format Document Ingestion Engine (`packages/core/src/docs/`)**:
-  * PDF chunking into pages and sections (`pdf-parse`).
-  * PPTX chunking into individual slides with titles, bullet points, and speaker notes (`officeparser`).
-  * DOCX chunking into heading sections and paragraph blocks (`mammoth`/`officeparser`).
-  * XLSX / CSV chunking into sheets with schema and column summaries (`xlsx`).
-- **Automatic AST & Entity Cross-Linker (`packages/core/src/links/cross-linker.ts`)**:
-  * Scans document text for code symbols (class names, function names, DB tables) to create bidirectional associative links (`mentions`, `specifies`, `documents`).
-- Merkle content hashing, dirty-bit tracking, and cascade invalidation (`packages/core/src/merkle.ts`).
-- Transitive closure table maintenance for sub-tree queries (`packages/core/src/closure.ts`).
-- Human/Agent-readable graph export and cold-boot import for `.hive/graph.json` (`packages/core/src/graph-exporter.ts`).
+## 1. MISSION & DOMAIN BOUNDARIES
 
-You do NOT:
-- Implement MCP server stdio transports or tool routers (owned by Jash in `packages/mcp`).
-- Implement vector embeddings, knapsack pack ranking, or BM25 search algorithms (owned by Anjali in `packages/pack`).
-- Modify `@hivemind/types` without coordinating with Jash.
+You have strict and exclusive ownership over:
+1. **SQLite WAL Database Engine**: High-concurrency database connection, table schemas, FTS5 triggers, and Compare-And-Swap (CAS) versioning (`packages/core/src/db.ts`).
+2. **Tree-sitter WASM AST Chunker**: Sub-file chunking for TypeScript, JavaScript, and Python into function, class, and method nodes (`packages/core/src/ast/chunker.ts`).
+3. **Universal Document Ingestion Engine**: Chunking non-code formats (`.pdf`, `.pptx`, `.docx`, `.xlsx`, `.csv`) into structured, hierarchical knowledge nodes (`packages/core/src/docs/universal-chunker.ts`).
+4. **Cross-Modal Entity Linker**: Scanning document text for code symbols to create bidirectional associative graph links (`mentions`, `specifies`, `documents`) (`packages/core/src/links/cross-linker.ts`).
+5. **Merkle Content Hash Tree & Invalidation**: Calculating SHA-256 Merkle hashes over authored content and propagating dirty staleness bits (`packages/core/src/merkle.ts`).
+6. **Transitive Closure Table**: Maintaining ancestor/descendant relationships for instant subtree querying (`packages/core/src/closure.ts`).
+7. **Graph Persistence & Cold Boot**: Auto-exporting and importing `.hive/graph.json` snapshots (`packages/core/src/graph-exporter.ts`).
+
+### Strict Negative Constraints:
+- Do NOT write MCP stdio transport or network server code (owned by Jash in `packages/mcp`).
+- Do NOT write vector embeddings, BM25 ranking, or knapsack packing math (owned by Anjali in `packages/pack`).
+- Do NOT alter `@hivemind/types` without coordinating with Jash.
 
 ---
 
-### 2. PACKAGE CONFIGURATION & DEPENDENCIES
-Create `packages/core/package.json`:
+## 2. PACKAGE CONFIGURATION & VENDOR WASM SETUP
+
+### `packages/core/package.json`
 ```json
 {
   "name": "@hivemind/core",
@@ -49,11 +46,15 @@ Create `packages/core/package.json`:
   "dependencies": {
     "@hivemind/types": "workspace:*",
     "better-sqlite3": "^11.8.1",
-    "web-tree-sitter": "^0.22.6"
+    "web-tree-sitter": "^0.22.6",
+    "pdf-parse": "^1.1.1",
+    "officeparser": "^4.1.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^20.11.0",
+    "@types/pdf-parse": "^1.1.4",
     "typescript": "^5.4.0",
     "vitest": "^1.4.0"
   }
@@ -61,15 +62,15 @@ Create `packages/core/package.json`:
 ```
 
 Precompiled WASM grammars must be stored in `packages/core/vendor/wasm/`:
-- `tree-sitter.wasm` (WebTreeSitter core)
+- `tree-sitter.wasm`
 - `tree-sitter-typescript.wasm`
 - `tree-sitter-python.wasm`
 
 ---
 
-### 3. IMPLEMENTATION BLUEPRINTS
+## 3. EXHAUSTIVE IMPLEMENTATION BLUEPRINTS
 
-#### 3.1 Database Initialization & Schema (`packages/core/src/db.ts`)
+### 3.1 Database Setup & Schema (`packages/core/src/db.ts`)
 ```typescript
 import Database from 'better-sqlite3';
 import path from 'path';
@@ -88,7 +89,6 @@ export function initializeDatabase(dbPath: string): Database.Database {
   db.pragma('foreign_keys = ON');
   db.pragma('temp_store = MEMORY');
 
-  // Schema creation
   db.exec(`
     CREATE TABLE IF NOT EXISTS nodes (
       id TEXT PRIMARY KEY,
@@ -141,7 +141,7 @@ export function initializeDatabase(dbPath: string): Database.Database {
       content_rowid=rowid
     );
 
-    -- Triggers for FTS5 synchronization
+    -- Automatic FTS5 sync triggers
     CREATE TRIGGER IF NOT EXISTS nodes_ai AFTER INSERT ON nodes BEGIN
       INSERT INTO nodes_fts(rowid, id, name, l0, l1) VALUES (new.rowid, new.id, new.name, new.l0, new.l1);
     END;
@@ -158,7 +158,7 @@ export function initializeDatabase(dbPath: string): Database.Database {
 }
 ```
 
-#### 3.2 Tree-sitter WASM Chunk Indexer (`packages/core/src/ast/chunker.ts`)
+### 3.2 Tree-sitter WASM AST Chunker (`packages/core/src/ast/chunker.ts`)
 ```typescript
 import Parser from 'web-tree-sitter';
 import path from 'path';
@@ -217,7 +217,7 @@ export class AstChunker {
     };
     nodes.push(fileNode);
 
-    // Recursive Walker to extract function & class chunks
+    // Recursive AST Walker
     const cursor = tree.walk();
     const extractChunks = () => {
       const type = cursor.nodeType;
@@ -276,20 +276,25 @@ export class AstChunker {
     };
 
     extractChunks();
+    // Memory Hygiene: Clean up AST memory immediately
+    tree.delete();
     return nodes;
   }
 }
 ```
 
-#### 3.3 Universal Document Chunker (PDF, PPTX, DOCX, XLSX) (`packages/core/src/docs/universal-chunker.ts`)
+### 3.3 Universal Document Chunker (`packages/core/src/docs/universal-chunker.ts`)
 ```typescript
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import pdfParse from 'pdf-parse';
+import officeParser from 'officeparser';
+import * as xlsx from 'xlsx';
 import { NodeRecord, NodeKind } from '@hivemind/types';
 
 export class UniversalDocChunker {
-  parseDocument(filePath: string, contentBuffer: Buffer): NodeRecord[] {
+  async parseDocument(filePath: string, buffer: Buffer): Promise<NodeRecord[]> {
     const ext = path.extname(filePath).toLowerCase();
     const fileName = path.basename(filePath);
     const nodes: NodeRecord[] = [];
@@ -299,7 +304,7 @@ export class UniversalDocChunker {
     if (ext === '.pptx') rootKind = 'presentation';
     else if (ext === '.xlsx' || ext === '.csv') rootKind = 'workbook';
 
-    // Root Document Node
+    // 1. Root Document Node
     nodes.push({
       id: rootId,
       tree: 'knowledge',
@@ -309,7 +314,7 @@ export class UniversalDocChunker {
       filePath,
       status: 'live',
       ver: 1,
-      hash: crypto.createHash('sha256').update(contentBuffer).digest('hex'),
+      hash: crypto.createHash('sha256').update(buffer).digest('hex'),
       l0: `${fileName} (${rootKind})`,
       tokL0: Math.ceil(fileName.length / 3),
       stale: false,
@@ -317,18 +322,93 @@ export class UniversalDocChunker {
       updatedAt: Date.now()
     });
 
-    // Chunking logic depending on format:
-    // For PPTX: Split by slides (Slide 1, Slide 2, etc.)
-    // For PDF: Split by pages or chapter headings
-    // For DOCX: Split by headings / sections
-    // For XLSX: Split by sheets and column schema headers
+    // 2. Format-Specific Chunking
+    if (ext === '.pdf') {
+      const data = await pdfParse(buffer);
+      const pages = data.text.split('\n\n\n'); // Approximate page delimiter
+      pages.forEach((pageText: string, idx: number) => {
+        if (!pageText.trim()) return;
+        const pageNum = idx + 1;
+        nodes.push({
+          id: `d:${crypto.randomBytes(3).toString('hex')}`,
+          tree: 'knowledge',
+          parent: rootId,
+          kind: 'page',
+          name: `${fileName} - Page ${pageNum}`,
+          filePath,
+          status: 'live',
+          ver: 1,
+          hash: crypto.createHash('sha256').update(pageText).digest('hex'),
+          l0: `Page ${pageNum} (${pageText.slice(0, 50).replace(/\n/g, ' ')}...)`,
+          l2: pageText,
+          tokL0: 15,
+          tokL1: 0,
+          tokL2: Math.ceil(pageText.length / 4),
+          stale: false,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        });
+      });
+    } else if (ext === '.pptx') {
+      const text = await officeParser.parseOfficeAsync(buffer);
+      const slides = text.split(/Slide \d+:/i).filter(Boolean);
+      slides.forEach((slideText: string, idx: number) => {
+        const slideNum = idx + 1;
+        const firstLine = slideText.trim().split('\n')[0] || `Slide ${slideNum}`;
+        nodes.push({
+          id: `d:${crypto.randomBytes(3).toString('hex')}`,
+          tree: 'knowledge',
+          parent: rootId,
+          kind: 'slide',
+          name: `Slide ${slideNum}: ${firstLine.slice(0, 30)}`,
+          filePath,
+          status: 'live',
+          ver: 1,
+          hash: crypto.createHash('sha256').update(slideText).digest('hex'),
+          l0: `Slide ${slideNum}: ${firstLine.slice(0, 40)}`,
+          l2: slideText,
+          tokL0: 18,
+          tokL1: 0,
+          tokL2: Math.ceil(slideText.length / 4),
+          stale: false,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        });
+      });
+    } else if (ext === '.xlsx' || ext === '.csv') {
+      const workbook = xlsx.read(buffer, { type: 'buffer' });
+      workbook.SheetNames.forEach((sheetName: string) => {
+        const sheet = workbook.Sheets[sheetName];
+        const csvContent = xlsx.utils.sheet_to_csv(sheet);
+        const headers = csvContent.split('\n')[0] || '';
+        nodes.push({
+          id: `d:${crypto.randomBytes(3).toString('hex')}`,
+          tree: 'knowledge',
+          parent: rootId,
+          kind: 'sheet',
+          name: `Sheet: ${sheetName}`,
+          filePath,
+          status: 'live',
+          ver: 1,
+          hash: crypto.createHash('sha256').update(csvContent).digest('hex'),
+          l0: `Sheet: ${sheetName} | Columns: ${headers.slice(0, 50)}`,
+          l2: csvContent.slice(0, 3000), // Cap oversized spreadsheets
+          tokL0: 20,
+          tokL1: 0,
+          tokL2: Math.min(800, Math.ceil(csvContent.length / 4)),
+          stale: false,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        });
+      });
+    }
 
     return nodes;
   }
 }
 ```
 
-#### 3.4 Cross-Modal Entity Linker (`packages/core/src/links/cross-linker.ts`)
+### 3.4 Cross-Modal Entity Linker (`packages/core/src/links/cross-linker.ts`)
 ```typescript
 import Database from 'better-sqlite3';
 
@@ -336,36 +416,42 @@ export class CrossModalEntityLinker {
   constructor(private db: Database.Database) {}
 
   linkDocumentsToCode(): number {
-    // 1. Fetch all known code symbol names (functions, classes)
-    const codeSymbols = this.db.prepare(`
+    // 1. Fetch code symbol identifiers (classes, functions, interfaces)
+    const symbols = this.db.prepare(`
       SELECT id, name, kind FROM nodes WHERE tree = 'code' AND kind IN ('function', 'class', 'interface')
     `).all() as { id: string; name: string; kind: string }[];
 
-    // 2. Fetch all document / slide chunks
+    // 2. Fetch document nodes
     const docChunks = this.db.prepare(`
-      SELECT id, l2, l0 FROM nodes WHERE tree = 'knowledge' AND l2 IS NOT NULL
-    `).all() as { id: string; l2: string; l0: string }[];
+      SELECT id, name, l2, l0 FROM nodes WHERE tree = 'knowledge' AND l2 IS NOT NULL
+    `).all() as { id: string; name: string; l2: string; l0: string }[];
 
     const insertLink = this.db.prepare(`
-      INSERT OR IGNORE INTO links (src, dst, rel, w) VALUES (?, ?, 'mentions', 1.0)
+      INSERT OR IGNORE INTO links (src, dst, rel, w) VALUES (?, ?, ?, ?)
     `);
 
     let createdLinks = 0;
-    for (const doc of docChunks) {
-      for (const symbol of codeSymbols) {
-        if (symbol.name.length > 3 && doc.l2.includes(symbol.name)) {
-          insertLink.run(doc.id, symbol.id);
-          createdLinks++;
+    const tx = this.db.transaction(() => {
+      for (const doc of docChunks) {
+        for (const sym of symbols) {
+          if (sym.name.length > 3 && (doc.l2.includes(sym.name) || doc.name.includes(sym.name))) {
+            // Forward link: doc mentions code
+            insertLink.run(doc.id, sym.id, 'mentions', 1.0);
+            // Reverse link: code documented by doc
+            insertLink.run(sym.id, doc.id, 'documented_by', 0.9);
+            createdLinks += 2;
+          }
         }
       }
-    }
+    });
 
+    tx();
     return createdLinks;
   }
 }
 ```
 
-#### 3.5 Merkle Invalidation & Graph Sync (`packages/core/src/graph-exporter.ts`)
+### 3.5 Graph Persistence Snapshot (`packages/core/src/graph-exporter.ts`)
 ```typescript
 import Database from 'better-sqlite3';
 import fs from 'fs';
@@ -384,8 +470,8 @@ export function exportGraphToJson(db: Database.Database, outputPath: string): vo
     exportedAt: Date.now(),
     stats: {
       totalNodes: nodes.length,
-      totalFiles: nodes.filter(n => n.kind === 'file').length,
-      totalChunks: nodes.filter(n => n.kind !== 'file').length,
+      totalFiles: nodes.filter(n => ['file', 'document', 'presentation', 'workbook'].includes(n.kind)).length,
+      totalChunks: nodes.filter(n => !['file', 'document', 'presentation', 'workbook'].includes(n.kind)).length,
       totalLinks: links.length
     },
     nodes,
@@ -398,8 +484,9 @@ export function exportGraphToJson(db: Database.Database, outputPath: string): vo
 
 ---
 
-### 4. UNIT TEST BLUEPRINT (`packages/core/tests/chunker.test.ts`)
-Write unit tests using Vitest:
+## 4. UNIT TEST BLUEPRINTS (`packages/core/tests/`)
+
+Create `packages/core/tests/chunker.test.ts`:
 ```typescript
 import { describe, it, expect, beforeAll } from 'vitest';
 import path from 'path';
@@ -413,30 +500,30 @@ describe('AstChunker', () => {
     await chunker.init(path.join(__dirname, '../vendor/wasm'));
   });
 
-  it('correctly chunks functions and classes in TypeScript', () => {
+  it('correctly parses functions, classes, and methods', () => {
     const code = `
-      export class AuthService {
-        public login(username: string): boolean {
+      export class PaymentProcessor {
+        processOrder(orderId: string): boolean {
           return true;
         }
       }
-      export function verifyToken(token: string) {
-        return !!token;
+      export function validateChecksum(data: string) {
+        return data.length > 0;
       }
     `;
-    const chunks = chunker.parseSource('src/auth.ts', code);
+    const chunks = chunker.parseSource('src/payment.ts', code);
     expect(chunks.length).toBe(4); // 1 file + 1 class + 1 method + 1 function
-    expect(chunks.some(c => c.name === 'AuthService' && c.kind === 'class')).toBe(true);
-    expect(chunks.some(c => c.name === 'login' && c.kind === 'method')).toBe(true);
-    expect(chunks.some(c => c.name === 'verifyToken' && c.kind === 'function')).toBe(true);
+    expect(chunks.some(c => c.name === 'PaymentProcessor' && c.kind === 'class')).toBe(true);
+    expect(chunks.some(c => c.name === 'processOrder' && c.kind === 'method')).toBe(true);
+    expect(chunks.some(c => c.name === 'validateChecksum' && c.kind === 'function')).toBe(true);
   });
 });
 ```
 
 ---
 
-### 5. GIT HYGIENE CHECKLIST
+## 5. GIT HYGIENE CHECKLIST
 1. Run `npm test` inside `packages/core`.
-2. Commit with message: `feat(core): implement Tree-sitter AST chunker and SQLite WAL engine`.
-3. Create session log: `.hive/sessions/YYYYMMDD-komal-ast-chunker.md`.
+2. Commit with message: `feat(core): implement AST chunker, universal document parser, and cross-modal linker`.
+3. Create session log in `.hive/sessions/YYYYMMDD-komal-universal-parser.md`.
 ```

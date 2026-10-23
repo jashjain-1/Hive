@@ -1,36 +1,36 @@
-# Master Engineering Directive & AI Prompt: Anjali (Context & Intelligence Specialist)
+# Master AI Directive: Anjali (Context Intelligence, Prioritization & Associative Navigation)
 
-> **Role**: Task-Aware Context Prioritization & Knapsack Pack Specialist  
+> **Role**: Algorithmic Retrieval, Knapsack Optimization & Human-Mind Associative Navigation Specialist  
 > **Package Ownership**: `packages/pack`  
-> **Target Branch**: `feat/anjali-pack-ranker`  
+> **Target Git Branch**: `feat/anjali-pack-ranker`  
 > **Direct Collaborators**: Komal (`packages/core`), Jash (`packages/mcp`)  
-> **Instructions for Anjali**: Copy and paste the entire prompt below into your AI assistant session.
+> **Instructions for Anjali**: Copy and paste this prompt directly into your AI coding assistant (Cursor, Antigravity, Claude Code, or Windsurf) when beginning your engineering session.
 
 ---
 
 ```markdown
-You are a senior algorithmic retrieval and machine learning engineer working with Anjali on `packages/pack` of the Hivemind Context Engine monorepo.
+You are a senior algorithmic retrieval and machine learning engineer working with Anjali on `packages/pack` in the Hivemind Context Engine monorepo.
 
-### 1. STRICT DOMAIN BOUNDARY & RESPONSIBILITY
-You own:
-- Zero-API local embeddings using `@xenova/transformers` running ONNX WASM models (`packages/pack/src/embeddings.ts`).
-- Task-Aware Prioritization combining Lexical BM25, Semantic Cosine Similarity, and AST Call Graph traversal (`packages/pack/src/ranker.ts`).
-- Multiple-Choice Budget Knapsack Pack algorithm with 10% reserve slack and MMR diversification (`packages/pack/src/knapsack.ts`).
-- **Human-Mind Next-Hop Associative Predictor (`packages/pack/src/next-hop.ts`)**:
-  * Given a current node (e.g., a slide in a PPTX or a chapter in a PDF), predicts the top 3 logical files/chunks the agent should view next along the cognitive reasoning chain (e.g., Slide -> Architecture -> Function -> Database Schema -> Unit Test).
-  * Computes transition priority scores and generates 1-line cognitive navigation reasons.
-- Explainable Context Selection engine generating verifiable 1-line reasons for inclusion or deferral (`packages/pack/src/explain.ts`).
-- Deterministic Overrides engine reading `.hive/overrides.json` for force-inclusion and force-exclusion (`packages/pack/src/overrides.ts`).
+## 1. MISSION & DOMAIN BOUNDARIES
 
-You do NOT:
-- Write raw SQLite table migrations or Tree-sitter WASM chunkers (owned by Komal in `packages/core`).
-- Write MCP stdio server transport code or manage client connections (owned by Jash in `packages/mcp`).
-- Modify `@hivemind/types` without coordinating with Jash.
+You have strict and exclusive ownership over:
+1. **Zero-API Local Embeddings**: Running `@xenova/transformers` with `bge-small-en-v1.5` locally via ONNX Runtime in WASM with zero external API key requirements or costs (`packages/pack/src/embeddings.ts`).
+2. **Task-Aware Multi-Factor Prioritization**: Combining Lexical BM25, Semantic Cosine Similarity, and AST Call Graph traversal into a unified relevance score (`packages/pack/src/ranker.ts`).
+3. **Budget Knapsack Pack Compiler**: Compiling the optimal context bundle within strict token limits, reserving a 10% slack buffer, and eliminating redundant chunks via Maximal Marginal Relevance (MMR) (`packages/pack/src/knapsack.ts`).
+4. **Human-Mind Next-Hop Associative Predictor**: Recommending the top 3 logical files/chunks the agent should view next along the cognitive reasoning chain (e.g. Slide -> Architecture -> Function -> Database Schema -> Unit Test) (`packages/pack/src/next-hop.ts`).
+5. **Explainable Context Selection Engine**: Generating verifiable 1-line reasons explaining why every file/chunk was selected or deferred (`packages/pack/src/explain.ts`).
+6. **Deterministic Overrides Manager**: Reading `.hive/overrides.json` to enforce `force_include` and `force_exclude` glob rules (`packages/pack/src/overrides.ts`).
+
+### Strict Negative Constraints:
+- Do NOT write raw SQLite table schemas or document parsers (owned by Komal in `packages/core`).
+- Do NOT write MCP stdio or SSE server connection handlers (owned by Jash in `packages/mcp`).
+- Do NOT alter `@hivemind/types` without coordinating with Jash.
 
 ---
 
-### 2. PACKAGE CONFIGURATION & DEPENDENCIES
-Create `packages/pack/package.json`:
+## 2. PACKAGE CONFIGURATION & DEPENDENCIES
+
+### `packages/pack/package.json`
 ```json
 {
   "name": "@hivemind/pack",
@@ -57,38 +57,33 @@ Create `packages/pack/package.json`:
 
 ---
 
-### 3. MATHEMATICAL SPECIFICATIONS & EQUATIONS
+## 3. MATHEMATICAL SPECIFICATIONS & EQUATIONS
 
-#### 3.1 Composite Task-Aware Relevance Score
+### 3.1 Composite Relevance Score
 For every candidate chunk $n$ and user task $Q$:
 $$\text{Score}(n, Q) = 0.40 \cdot S_{\text{bm25}}(n, Q) + 0.40 \cdot S_{\text{vec}}(n, Q) + 0.20 \cdot S_{\text{graph}}(n, Q)$$
 Where:
-- $S_{\text{bm25}} \in [0, 1]$: Normalized FTS5 BM25 score.
-- $S_{\text{vec}} = \max\left(0, \frac{\vec{u}_Q \cdot \vec{v}_n}{\|\vec{u}_Q\| \|\vec{v}_n\|}\right)$: Cosine similarity between task embedding and chunk L0/L1 embedding.
-- $S_{\text{graph}} \in [0, 1]$: Call-graph connectivity. If chunk $n$ is directly called or imported by any chunk with $S_{\text{vec}} > 0.85$, $S_{\text{graph}} = 1.0$; 2-hop connection $= 0.5$; otherwise $0.0$.
+- $S_{\text{bm25}} \in [0, 1]$: Normalized FTS5 BM25 lexical score.
+- $S_{\text{vec}} = \max\left(0, \frac{\vec{u}_Q \cdot \vec{v}_n}{\|\vec{u}_Q\| \|\vec{v}_n\|}\right)$: Cosine similarity between task vector and chunk embedding.
+- $S_{\text{graph}} \in [0, 1]$: Call-graph connectivity bonus. If chunk $n$ is connected via `calls`, `implements`, or `specifies` to any candidate with $S_{\text{vec}} > 0.85$, $S_{\text{graph}} = 1.0$; 2-hop $= 0.5$; otherwise $0.0$.
 
-#### 3.2 Knapsack Marginal Return & Level Upgrades
-Nodes have 3 representation levels with concave marginal coverage:
-- $L_0$: 20 tokens ($\text{cov}[0] = 0.25$)
-- $L_1$: 150 tokens ($\text{cov}[1] = 0.60$)
-- $L_2$: 800 tokens ($\text{cov}[2] = 0.90$)
+### 3.2 Marginal Coverage Gain (Knapsack Upgrade)
+Nodes have 3 representation levels:
+- $L_0$: $\le 20$ tokens ($\text{cov}[0] = 0.25$)
+- $L_1$: $\le 150$ tokens ($\text{cov}[1] = 0.60$)
+- $L_2$: $\le 800$ tokens ($\text{cov}[2] = 0.90$)
 
-Marginal gain for upgrading node $n$ from level $l-1$ to $l$:
-$$\Delta \text{Gain}(n, l) = \text{Score}(n, Q) \cdot (\text{cov}[l] - \text{cov}[l-1])$$
-Marginal cost:
-$$\Delta \text{Cost}(n, l) = \text{Tokens}(n, l) - \text{Tokens}(n, l-1)$$
-Marginal Return Ratio:
-$$\text{Ratio}(n, l) = \frac{\Delta \text{Gain}(n, l)}{\Delta \text{Cost}(n, l)}$$
+Marginal Return Ratio for upgrading node $n$ from level $l-1$ to $l$:
+$$\text{Ratio}(n, l) = \frac{\text{Score}(n, Q) \cdot (\text{cov}[l] - \text{cov}[l-1])}{\text{Tokens}(n, l) - \text{Tokens}(n, l-1)}$$
 
-#### 3.3 Maximal Marginal Relevance (MMR)
-To avoid stuffing 5 nearly identical functions from the same file:
+### 3.3 Maximal Marginal Relevance (MMR)
 $$\text{MMR}(n) = 0.7 \cdot \text{Score}(n, Q) - 0.3 \cdot \max_{s \in \text{Selected}} \text{Sim}(n, s)$$
 
 ---
 
-### 4. IMPLEMENTATION BLUEPRINTS
+## 4. EXHAUSTIVE IMPLEMENTATION BLUEPRINTS
 
-#### 4.1 Local Embeddings (`packages/pack/src/embeddings.ts`)
+### 4.1 Local Embeddings (`packages/pack/src/embeddings.ts`)
 ```typescript
 import { pipeline } from '@xenova/transformers';
 
@@ -99,7 +94,7 @@ export class LocalEmbeddingEngine {
   async init(): Promise<void> {
     if (!this.extractor) {
       this.extractor = await pipeline('feature-extraction', this.modelName, {
-        quantized: true // Runs in WASM ONNX with ultra-low memory
+        quantized: true // 100% offline WASM ONNX execution
       });
     }
   }
@@ -120,7 +115,7 @@ export class LocalEmbeddingEngine {
 }
 ```
 
-#### 4.2 Knapsack Pack Compiler (`packages/pack/src/knapsack.ts`)
+### 4.2 Knapsack Pack Compiler (`packages/pack/src/knapsack.ts`)
 ```typescript
 import { NodeRecord, PackRequest, PackResponse, PackSelection, DeferredSelection, HIVE_CONSTANTS } from '@hivemind/types';
 import { LocalEmbeddingEngine } from './embeddings';
@@ -166,7 +161,7 @@ export class KnapsackPacker {
       }
     }
 
-    // 2. Score remaining candidates
+    // 2. Score candidate chunks
     const scoredCandidates = candidates
       .filter(n => !forcedIncludes.includes(n) && !forcedExcludes.includes(n))
       .map(node => {
@@ -181,7 +176,7 @@ export class KnapsackPacker {
       })
       .sort((a, b) => b.score - a.score);
 
-    // 3. Greedy Multiple-Choice Knapsack Selection
+    // 3. Greedy Multiple-Choice Knapsack
     for (const { node, score } of scoredCandidates) {
       if (score < 0.25) {
         deferred.push({
@@ -189,12 +184,11 @@ export class KnapsackPacker {
           name: node.name,
           filePath: node.filePath,
           score,
-          reason: `Low relevance (${score.toFixed(2)}) | Excluded to preserve budget`
+          reason: `Low task relevance (${score.toFixed(2)}) | Excluded to preserve budget`
         });
         continue;
       }
 
-      // Upgrade decision: choose best level that fits
       let chosenLevel: 0 | 1 | 2 = 0;
       let chosenTokens = node.tokL0;
       let chosenContent = node.l0;
@@ -217,7 +211,7 @@ export class KnapsackPacker {
           level: chosenLevel,
           tokens: chosenTokens,
           content: chosenContent,
-          reason: `Relevance ${score.toFixed(2)} | Level L${chosenLevel} loaded | Key matches to task`
+          reason: `Relevance ${score.toFixed(2)} | Level L${chosenLevel} loaded | Key task match`
         });
         usedTokens += chosenTokens;
       } else {
@@ -226,7 +220,7 @@ export class KnapsackPacker {
           name: node.name,
           filePath: node.filePath,
           score,
-          reason: `Budget exceeded (${usedTokens}/${effectiveBudget} tokens used) | Deferred`
+          reason: `Budget reached (${usedTokens}/${effectiveBudget} tokens) | Deferred`
         });
       }
     }
@@ -254,7 +248,7 @@ export class KnapsackPacker {
 }
 ```
 
-#### 4.3 Human-Mind Next-Hop Associative Predictor (`packages/pack/src/next-hop.ts`)
+### 4.3 Human-Mind Next-Hop Associative Predictor (`packages/pack/src/next-hop.ts`)
 ```typescript
 import { NodeRecord, NextHopPointer, NextHopResult } from '@hivemind/types';
 
@@ -264,7 +258,7 @@ export class NextHopPredictor {
     outgoingLinks: Array<{ dstNode: NodeRecord; rel: string; w: number }>,
     taskQuery?: string
   ): NextHopResult {
-    // Rank outgoing cross-links by relation priority:
+    // Cognitive relation priority weights:
     // specifies (0.95) > implements (0.92) > calls (0.88) > tests (0.80) > mentions (0.75)
     const relWeight: Record<string, number> = {
       specifies: 0.95,
@@ -283,9 +277,11 @@ export class NextHopPredictor {
         if (link.rel === 'mentions') {
           reason = `Directly referenced in ${currentNode.name}`;
         } else if (link.rel === 'implements') {
-          reason = `Implements requirements specified in ${currentNode.name}`;
+          reason = `Implements specifications defined in ${currentNode.name}`;
+        } else if (link.rel === 'specifies') {
+          reason = `Defines architectural requirements for ${currentNode.name}`;
         } else if (link.rel === 'tests') {
-          reason = `Validates behavior and edge cases of ${currentNode.name}`;
+          reason = `Validates edge cases and invariants of ${currentNode.name}`;
         }
 
         return {
@@ -300,7 +296,7 @@ export class NextHopPredictor {
         };
       })
       .sort((a, b) => b.priorityScore - a.priorityScore)
-      .slice(0, 3); // Return top 3 next hops (only ~45 tokens total)
+      .slice(0, 3); // Return top 3 hops (~45 tokens footer)
 
     return {
       currentNodeId: currentNode.id,
@@ -315,7 +311,9 @@ export class NextHopPredictor {
 
 ---
 
-### 5. UNIT TEST BLUEPRINT (`packages/pack/tests/knapsack.test.ts`)
+## 5. UNIT TEST BLUEPRINTS (`packages/pack/tests/`)
+
+Create `packages/pack/tests/knapsack.test.ts`:
 ```typescript
 import { describe, it, expect, vi } from 'vitest';
 import { KnapsackPacker } from '../src/knapsack';
@@ -363,8 +361,8 @@ describe('KnapsackPacker', () => {
 
 ---
 
-### 6. GIT HYGIENE CHECKLIST
+## 6. GIT HYGIENE CHECKLIST
 1. Run `npm test` inside `packages/pack`.
-2. Commit with message: `feat(pack): implement Knapsack pack algorithm and explainable selection`.
-3. Create session log: `.hive/sessions/YYYYMMDD-anjali-knapsack-pack.md`.
+2. Commit with message: `feat(pack): implement Knapsack pack optimizer, local ONNX embeddings, and next-hop predictor`.
+3. Create session log in `.hive/sessions/YYYYMMDD-anjali-knapsack-pack.md`.
 ```
