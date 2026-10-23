@@ -17,7 +17,9 @@ You own:
 - Production Dockerfile and 1-click Render blueprint (`render.yaml`) for 100% free public hosting.
 - Multi-Tenant Zero-Trust Isolation: Per-tenant SQLite databases (`.hive/tenants/<tenantId>.db`) with zero cross-tenant leakage.
 - Arbitrary repository size support via streaming AST ingestion and chunked SQLite commits (No repository size cap).
-- 9 Core Tool definitions and input/output validation schemas using Zod (`packages/mcp/src/tools/`).
+- 10 Core Tool definitions and input/output validation schemas using Zod (`packages/mcp/src/tools/`):
+  * `peek`, `expand`, `find`, `pack`, `explain`, `write`, `task`, `signal`, `branch`, and `next` (Human-mind associative navigation).
+- Automatic ~40-token `NEXT_HOPS` footer injection into `peek`, `expand`, and `pack` responses so agents know what context to inspect next without hallucinating or making speculative queries.
 - Window Protocol P0–P4 state machine, client window registry, and Epoch compaction (`packages/mcp/src/window/`).
 - CLI executable entry point `hive-mcp` for instant execution across Claude Desktop, Cursor, Antigravity, and Windsurf (`packages/mcp/src/index.ts`).
 - Shared contract definitions (`packages/types`) and pre-push validation hooks (`scripts/`).

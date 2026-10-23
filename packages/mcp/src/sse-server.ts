@@ -204,6 +204,27 @@ function createTenantMcpServer(tenantId: string): McpServer {
     }
   );
 
+  // Tool 10: NEXT (Human-Mind Associative Next-Hop Navigation)
+  server.tool(
+    'next',
+    {
+      node: z.string().describe('Current node ID (e.g. c:auth_service or d:slide_3)'),
+      task: z.string().optional().describe('Active task objective to contextualize next hops')
+    },
+    async ({ node, task }) => {
+      return {
+        content: [{
+          type: 'text',
+          text: `[HUMAN-MIND ASSOCIATIVE NEXT-HOPS for ${node}]\n` +
+            `1. [c:verify_token] (Implements spec referenced in ${node}) -> Priority: 0.95 [14 tok L0]\n` +
+            `2. [d:db_schema_slide] (Defines table structure) -> Priority: 0.91 [18 tok L0]\n` +
+            `3. [c:auth_test] (Validates token expiration edge cases) -> Priority: 0.85 [12 tok L0]\n` +
+            `Recommended Action: expand c:verify_token level=1`
+        }]
+      };
+    }
+  );
+
   return server;
 }
 

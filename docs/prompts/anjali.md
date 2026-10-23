@@ -16,6 +16,9 @@ You own:
 - Zero-API local embeddings using `@xenova/transformers` running ONNX WASM models (`packages/pack/src/embeddings.ts`).
 - Task-Aware Prioritization combining Lexical BM25, Semantic Cosine Similarity, and AST Call Graph traversal (`packages/pack/src/ranker.ts`).
 - Multiple-Choice Budget Knapsack Pack algorithm with 10% reserve slack and MMR diversification (`packages/pack/src/knapsack.ts`).
+- **Human-Mind Next-Hop Associative Predictor (`packages/pack/src/next-hop.ts`)**:
+  * Given a current node (e.g., a slide in a PPTX or a chapter in a PDF), predicts the top 3 logical files/chunks the agent should view next along the cognitive reasoning chain (e.g., Slide -> Architecture -> Function -> Database Schema -> Unit Test).
+  * Computes transition priority scores and generates 1-line cognitive navigation reasons.
 - Explainable Context Selection engine generating verifiable 1-line reasons for inclusion or deferral (`packages/pack/src/explain.ts`).
 - Deterministic Overrides engine reading `.hive/overrides.json` for force-inclusion and force-exclusion (`packages/pack/src/overrides.ts`).
 
@@ -246,6 +249,65 @@ export class KnapsackPacker {
         paramsHash: 'bge-v1.5-greedy',
         selectedNodes: items.map(i => ({ id: i.nodeId, level: i.level, tokens: i.tokens }))
       }
+    };
+  }
+}
+```
+
+#### 4.3 Human-Mind Next-Hop Associative Predictor (`packages/pack/src/next-hop.ts`)
+```typescript
+import { NodeRecord, NextHopPointer, NextHopResult } from '@hivemind/types';
+
+export class NextHopPredictor {
+  predictNextHops(
+    currentNode: NodeRecord,
+    outgoingLinks: Array<{ dstNode: NodeRecord; rel: string; w: number }>,
+    taskQuery?: string
+  ): NextHopResult {
+    // Rank outgoing cross-links by relation priority:
+    // specifies (0.95) > implements (0.92) > calls (0.88) > tests (0.80) > mentions (0.75)
+    const relWeight: Record<string, number> = {
+      specifies: 0.95,
+      implements: 0.92,
+      calls: 0.88,
+      tests: 0.80,
+      mentions: 0.75
+    };
+
+    const recommendedHops: NextHopPointer[] = outgoingLinks
+      .map(link => {
+        const baseWeight = relWeight[link.rel] || 0.70;
+        const priorityScore = baseWeight * link.w;
+        
+        let reason = `Associated via "${link.rel}" relationship`;
+        if (link.rel === 'mentions') {
+          reason = `Directly referenced in ${currentNode.name}`;
+        } else if (link.rel === 'implements') {
+          reason = `Implements requirements specified in ${currentNode.name}`;
+        } else if (link.rel === 'tests') {
+          reason = `Validates behavior and edge cases of ${currentNode.name}`;
+        }
+
+        return {
+          nodeId: link.dstNode.id,
+          name: link.dstNode.name,
+          kind: link.dstNode.kind,
+          filePath: link.dstNode.filePath,
+          relation: link.rel,
+          priorityScore,
+          tokensL0: link.dstNode.tokL0,
+          reason
+        };
+      })
+      .sort((a, b) => b.priorityScore - a.priorityScore)
+      .slice(0, 3); // Return top 3 next hops (only ~45 tokens total)
+
+    return {
+      currentNodeId: currentNode.id,
+      currentName: currentNode.name,
+      task: taskQuery,
+      recommendedHops,
+      trailDepth: 1
     };
   }
 }

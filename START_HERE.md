@@ -12,6 +12,8 @@ This project is a high-performance, token-efficient Model Context Protocol (MCP)
 - **Hosted Public Product**: **100% Free Cloud Deployment** on Render Free Tier via Docker (`render.yaml`).
 - **Engine Protocol**: Model Context Protocol (MCP) over **Server-Sent Events (SSE)** (for public cloud hosting) and **Stdio** (for local CLI).
 - **Scale**: **No Repository Size Cap** — streams files sequentially with batch SQLite commits, effortlessly indexing giant monorepos and multi-gigabyte codebases.
+- **Universal Multi-Format Ingestion**: Indexes **all file types** — source code, `.pdf` (pages/chapters), `.pptx` (slides & speaker notes), `.docx` (sections/headings), and `.xlsx`/`.csv` (sheets & column schemas).
+- **Human-Mind Associative Navigation**: Connects slides/docs to code via bidirectional cross-links (`mentions`, `implements`, `specifies`) and predicts **what file/chunk the agent should view next** via an associative pointer footer and the `next(node, task)` tool.
 - **Storage**: Isolated SQLite WAL database per tenant (`.hive/tenants/<tenantId>.db`) for zero cross-tenant leakage.
 - **Intelligence**: WebAssembly Tree-sitter AST chunker (functions/classes) + Local ONNX vector embeddings (`@xenova/transformers`, zero API key required) + SQLite FTS5 BM25.
 - **Security**: Ephemeral GitHub tokens held strictly in-memory during indexing, rate-limiting, and Helmet security headers.

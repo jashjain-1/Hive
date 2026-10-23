@@ -15,6 +15,13 @@ You are a senior database and compilers engineer working with Komal on `packages
 You own:
 - SQLite WAL database schema, migrations, prepared statements, and CAS writes (`packages/core/src/db.ts`).
 - Tree-sitter WASM AST parser & chunk-level indexer for TypeScript/JavaScript & Python (`packages/core/src/ast/`).
+- **Universal Multi-Format Document Ingestion Engine (`packages/core/src/docs/`)**:
+  * PDF chunking into pages and sections (`pdf-parse`).
+  * PPTX chunking into individual slides with titles, bullet points, and speaker notes (`officeparser`).
+  * DOCX chunking into heading sections and paragraph blocks (`mammoth`/`officeparser`).
+  * XLSX / CSV chunking into sheets with schema and column summaries (`xlsx`).
+- **Automatic AST & Entity Cross-Linker (`packages/core/src/links/cross-linker.ts`)**:
+  * Scans document text for code symbols (class names, function names, DB tables) to create bidirectional associative links (`mentions`, `specifies`, `documents`).
 - Merkle content hashing, dirty-bit tracking, and cascade invalidation (`packages/core/src/merkle.ts`).
 - Transitive closure table maintenance for sub-tree queries (`packages/core/src/closure.ts`).
 - Human/Agent-readable graph export and cold-boot import for `.hive/graph.json` (`packages/core/src/graph-exporter.ts`).
@@ -274,7 +281,91 @@ export class AstChunker {
 }
 ```
 
-#### 3.3 Merkle Invalidation & Graph Sync (`packages/core/src/graph-exporter.ts`)
+#### 3.3 Universal Document Chunker (PDF, PPTX, DOCX, XLSX) (`packages/core/src/docs/universal-chunker.ts`)
+```typescript
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { NodeRecord, NodeKind } from '@hivemind/types';
+
+export class UniversalDocChunker {
+  parseDocument(filePath: string, contentBuffer: Buffer): NodeRecord[] {
+    const ext = path.extname(filePath).toLowerCase();
+    const fileName = path.basename(filePath);
+    const nodes: NodeRecord[] = [];
+    const rootId = `d:${crypto.randomBytes(3).toString('hex')}`;
+
+    let rootKind: NodeKind = 'document';
+    if (ext === '.pptx') rootKind = 'presentation';
+    else if (ext === '.xlsx' || ext === '.csv') rootKind = 'workbook';
+
+    // Root Document Node
+    nodes.push({
+      id: rootId,
+      tree: 'knowledge',
+      parent: null,
+      kind: rootKind,
+      name: fileName,
+      filePath,
+      status: 'live',
+      ver: 1,
+      hash: crypto.createHash('sha256').update(contentBuffer).digest('hex'),
+      l0: `${fileName} (${rootKind})`,
+      tokL0: Math.ceil(fileName.length / 3),
+      stale: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+
+    // Chunking logic depending on format:
+    // For PPTX: Split by slides (Slide 1, Slide 2, etc.)
+    // For PDF: Split by pages or chapter headings
+    // For DOCX: Split by headings / sections
+    // For XLSX: Split by sheets and column schema headers
+
+    return nodes;
+  }
+}
+```
+
+#### 3.4 Cross-Modal Entity Linker (`packages/core/src/links/cross-linker.ts`)
+```typescript
+import Database from 'better-sqlite3';
+
+export class CrossModalEntityLinker {
+  constructor(private db: Database.Database) {}
+
+  linkDocumentsToCode(): number {
+    // 1. Fetch all known code symbol names (functions, classes)
+    const codeSymbols = this.db.prepare(`
+      SELECT id, name, kind FROM nodes WHERE tree = 'code' AND kind IN ('function', 'class', 'interface')
+    `).all() as { id: string; name: string; kind: string }[];
+
+    // 2. Fetch all document / slide chunks
+    const docChunks = this.db.prepare(`
+      SELECT id, l2, l0 FROM nodes WHERE tree = 'knowledge' AND l2 IS NOT NULL
+    `).all() as { id: string; l2: string; l0: string }[];
+
+    const insertLink = this.db.prepare(`
+      INSERT OR IGNORE INTO links (src, dst, rel, w) VALUES (?, ?, 'mentions', 1.0)
+    `);
+
+    let createdLinks = 0;
+    for (const doc of docChunks) {
+      for (const symbol of codeSymbols) {
+        if (symbol.name.length > 3 && doc.l2.includes(symbol.name)) {
+          insertLink.run(doc.id, symbol.id);
+          createdLinks++;
+        }
+      }
+    }
+
+    return createdLinks;
+  }
+}
+```
+
+#### 3.5 Merkle Invalidation & Graph Sync (`packages/core/src/graph-exporter.ts`)
 ```typescript
 import Database from 'better-sqlite3';
 import fs from 'fs';

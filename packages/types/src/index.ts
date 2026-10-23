@@ -24,7 +24,16 @@ export type NodeKind =
   | 'summary'
   | 'task'
   | 'tool'
-  | 'concept';
+  | 'concept'
+  // Multi-Format Document Types (Universal Ingestion)
+  | 'document'                              // PDF or DOCX root
+  | 'presentation'                          // PPTX root
+  | 'workbook'                              // XLSX root
+  | 'slide'                                 // PPTX slide node
+  | 'page'                                  // PDF page node
+  | 'section'                               // DOCX heading / chapter node
+  | 'sheet'                                 // XLSX spreadsheet sheet node
+  | 'table';                                // Structured tabular data chunk
 
 export type NodeStatus = 
   | 'live'
@@ -79,7 +88,12 @@ export type LinkRelation =
   | 'supersedes'
   | 'contradicts'
   | 'tests'
-  | 'blocks';
+  | 'blocks'
+  // Cross-Modal Document-to-Code Relations
+  | 'mentions'                              // Slide/Doc mentions symbol
+  | 'specifies'                             // PRD/Spec defines requirements for code
+  | 'documents'                             // Doc explains implementation
+  | 'next_step';                            // Cognitive navigation pointer
 
 export interface CrossLink {
   src: string;                              // Source Node ID
@@ -206,6 +220,29 @@ export interface ExplainNodeResult {
 export interface OverridesConfig {
   force_include: string[];                  // Globs or symbol names
   force_exclude: string[];
+}
+
+// ============================================================================
+// 4.1 HUMAN-MIND ASSOCIATIVE NAVIGATION (NEXT-HOP PREDICTION)
+// ============================================================================
+
+export interface NextHopPointer {
+  nodeId: string;
+  name: string;
+  kind: NodeKind;
+  filePath?: string;
+  relation: string;                         // e.g. "implements spec", "tests edge case", "defines schema"
+  priorityScore: number;                    // [0.0 - 1.0]
+  tokensL0: number;                         // Minimal cost to read
+  reason: string;                           // 1-line reason why the human mind views this next
+}
+
+export interface NextHopResult {
+  currentNodeId: string;
+  currentName: string;
+  task?: string;
+  recommendedHops: NextHopPointer[];
+  trailDepth: number;
 }
 
 // ============================================================================
