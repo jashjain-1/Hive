@@ -78,9 +78,9 @@ flowchart TD
 ### 3.1 Concave Representation Hierarchy ($L_0$ to $L_3$)
 Context units are discretized into four strictly bounded layers:
 
-* **Level 0 ($L_0$)**: Micro-signature and gist. $\text{Tokens}(L_0) \le 20$. Initial marginal coverage $\operatorname{cov}[0] = 0.25$.
-* **Level 1 ($L_1$)**: Structured technical summary, contract facts, and cross-link identifiers. $\text{Tokens}(L_1) \le 150$. Initial marginal coverage $\operatorname{cov}[1] = 0.60$.
-* **Level 2 ($L_2$)**: Full authored chunk code or structured prose. $\text{Tokens}(L_2) \le 800$. Initial marginal coverage $\operatorname{cov}[2] = 0.90$.
+* **Level 0 ($L_0$)**: Micro-signature and gist. $\text{Tokens}(L_0) \le 20$. Initial marginal coverage $\text{cov}[0] = 0.25$.
+* **Level 1 ($L_1$)**: Structured technical summary, contract facts, and cross-link identifiers. $\text{Tokens}(L_1) \le 150$. Initial marginal coverage $\text{cov}[1] = 0.60$.
+* **Level 2 ($L_2$)**: Full authored chunk code or structured prose. $\text{Tokens}(L_2) \le 800$. Initial marginal coverage $\text{cov}[2] = 0.90$.
 * **Level 3 ($L_3$)**: Unbounded raw blob. Stored in content-addressed storage; chunked on-demand via range queries and never automatically loaded into context.
 
 ### 3.2 Task-Aware Multi-Factor Relevance Scoring
@@ -99,7 +99,7 @@ $$\mathcal{S}_{\text{vec}}(n, Q) = \max\left(0, \frac{\vec{u}_Q \cdot \vec{v}_n}
 3. **Graph Topology Connectivity ($\mathcal{S}_{\text{graph}}$)**: Traversal bonus over directed links:
 
 $$\mathcal{S}_{\text{graph}}(n, Q) = \begin{cases} 
-1.0 & \text{if } \exists m \in \operatorname{adj}(n) \text{ such that } \mathcal{S}_{\text{vec}}(m, Q) \ge 0.85 \\
+1.0 & \text{if } \exists m \in \text{adj}(n) \text{ such that } \mathcal{S}_{\text{vec}}(m, Q) \ge 0.85 \\
 0.5 & \text{if } \text{distance}(n, m) = 2 \\
 0.0 & \text{otherwise}
 \end{cases}$$
@@ -125,32 +125,32 @@ $$\sum_{l=0}^{2} x_{n,l} \le 1 \quad \forall n \in \mathcal{V}$$
 
 Where marginal gain and cost increments are:
 
-$$\Delta \text{Gain}(n, l) = \mathcal{S}_{\text{final}}(n, Q) \cdot (\operatorname{cov}[l] - \operatorname{cov}[l-1])$$
+$$\Delta \text{Gain}(n, l) = \mathcal{S}_{\text{final}}(n, Q) \cdot (\text{cov}[l] - \text{cov}[l-1])$$
 
 $$\Delta \text{Cost}(n, l) = \text{Tokens}(n, l) - \text{Tokens}(n, l-1)$$
 
-Because the marginal coverage progression $\operatorname{cov} = [0.25, 0.60, 0.90]$ exhibits strict concavity per token:
+Because the marginal coverage progression $\text{cov} = [0.25, 0.60, 0.90]$ exhibits strict concavity per token:
 
-$$\frac{\operatorname{cov}[0]}{\text{Tokens}(L_0)} \approx 0.0125 > \frac{\operatorname{cov}[1] - \operatorname{cov}[0]}{\text{Tokens}(L_1) - \text{Tokens}(L_0)} \approx 0.0027 > \frac{\operatorname{cov}[2] - \operatorname{cov}[1]}{\text{Tokens}(L_2) - \text{Tokens}(L_1)} \approx 0.0005$$
+$$\frac{\text{cov}[0]}{\text{Tokens}(L_0)} \approx 0.0125 > \frac{\text{cov}[1] - \text{cov}[0]}{\text{Tokens}(L_1) - \text{Tokens}(L_0)} \approx 0.0027 > \frac{\text{cov}[2] - \text{cov}[1]}{\text{Tokens}(L_2) - \text{Tokens}(L_1)} \approx 0.0005$$
 
 A greedy priority queue ordered by marginal return $\frac{\Delta \text{Gain}(n, l)}{\Delta \text{Cost}(n, l)}$ yields a near-optimal solution in $\mathcal{O}(|\mathcal{V}| \log |\mathcal{V}|)$ time.
 
 ### 3.4 Maximal Marginal Relevance (MMR)
 To eliminate duplicate functions across redundant files, candidates are penalized against already-selected chunks $\mathcal{C}$:
 
-$$\operatorname{MMR}(n) = \lambda \cdot \mathcal{S}_{\text{final}}(n, Q) - (1 - \lambda) \max_{s \in \mathcal{C}} \operatorname{Sim}(n, s), \quad \lambda = 0.70$$
+$$\text{MMR}(n) = \lambda \cdot \mathcal{S}_{\text{final}}(n, Q) - (1 - \lambda) \max_{s \in \mathcal{C}} \text{Sim}(n, s), \quad \lambda = 0.70$$
 
 ### 3.5 Deterministic Merkle Hash Formulation (Invariant I5)
 Merkle hashes cover authored content and child hashes exclusively, isolating derived summaries from hash churn:
 
-$$\mathcal{H}(n) = \operatorname{SHA256}\left(\operatorname{kind}(n) \mathbin{\Vert} \operatorname{authored}(n) \mathbin{\Vert} \operatorname{sort}\left(\{\mathcal{H}(c) : c \in \operatorname{children}(n)\}\right)\right)$$
+$$\mathcal{H}(n) = \text{SHA256}\left(\text{kind}(n) \parallel \text{authored}(n) \parallel \text{sort}\left(\{ \mathcal{H}(c) : c \in \text{children}(n) \}\right)\right)$$
 
 ### 3.6 Confidence Decay Function (Feature F3)
 Facts and knowledge nodes decay over time unless re-verified via deterministic probes:
 
-$$\operatorname{conf}(t) = \operatorname{conf}_0 \cdot \left(\frac{1}{2}\right)^{\frac{\Delta t}{\tau_{\text{half}}}}$$
+$$\text{conf}(t) = \text{conf}_0 \cdot \left(\frac{1}{2}\right)^{\frac{\Delta t}{\tau_{\text{half}}}}$$
 
-Passing a deterministic probe resets $\operatorname{conf}(t) = 1.0$.
+Passing a deterministic probe resets $\text{conf}(t) = 1.0$.
 
 ---
 
@@ -162,7 +162,7 @@ The architecture guarantees eleven operational invariants across all operations:
 |---|---|
 | **I1** | Window regions P0 to P2 are strictly byte-frozen within an epoch to maintain prompt cache validity. |
 | **I2** | Window region P3 is append-only within an epoch. Context demotion occurs only at epoch compaction boundaries. |
-| **I3** | Every tool response is capped at $\text{resp\_cap} = 1200$ tokens with cursor-based pagination. |
+| **I3** | Every tool response is capped at `resp_cap = 1200` tokens with cursor-based pagination. |
 | **I4** | Every node has exactly one primary parent in one tree hierarchy; cross-tree connections are typed links. |
 | **I5** | Merkle hash covers authored content and child hashes only. Derived data and pheromones do not affect hashes. |
 | **I6** | Derived levels ($L_0, L_1$, lenses, embeddings) are non-authoritative. Authored $L_2$ and blob $L_3$ are sources of truth. |
