@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# SQLite databases & temp files
+.hive/*.db
+.hive/*.db-wal
+.hive/*.db-shm
+*.sqlite
+*.sqlite3
+
+# Environment & logs
+.env
+.env.local
+*.log
+npm-debug.log*
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+.nyc_output/

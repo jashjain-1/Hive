@@ -1,0 +1,25 @@
+{
+  "name": "hivemind-context",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hierarchical context trees & task-aware context compiler for AI agents via MCP",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present",
+    "git:check": "node scripts/ai-session-logger.js",
+    "inspector": "npx @modelcontextprotocol/inspector node packages/mcp/dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
