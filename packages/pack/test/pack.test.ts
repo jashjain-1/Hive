@@ -268,4 +268,49 @@ describe('@hivemind/pack - Architectural Test Suite (Anjali)', () => {
       expect(footer).toContain('COGNITIVE_TRAIL');
     });
   });
+
+  describe('4. Deterministic Overrides Manager', () => {
+    const makeNode = (id: string, filePath: string): NodeRecord => ({
+      id,
+      tree: 'code',
+      parent: null,
+      kind: 'file',
+      name: filePath.split('/').pop() ?? id,
+      status: 'live',
+      ver: 1,
+      hash: `hash-${id}`,
+      filePath,
+      l0: id,
+      tokL0: 5,
+      tokL1: 20,
+      tokL2: 80,
+      stale: false,
+      createdAt: 0,
+      updatedAt: 0
+    });
+
+    it('honors force_include and force_exclude glob patterns', () => {
+      overrides.saveConfig({
+        force_include: ['**/auth.ts'],
+        force_exclude: ['**/node_modules/**', '**/*.test.ts']
+      });
+
+      const nodes = [
+        makeNode('c:auth', 'packages/core/src/auth.ts'),
+        makeNode('c:auth_test', 'packages/core/src/auth.test.ts'),
+        makeNode('c:dep', 'node_modules/lib/index.js'),
+        makeNode('c:readme', 'docs/README.md')
+      ];
+
+      const { forcedIncludes, forcedExcludes } = overrides.filter(nodes);
+      expect(forcedIncludes.map(n => n.id)).toEqual(['c:auth']);
+      expect(forcedExcludes.map(n => n.id)).toEqual(['c:auth_test', 'c:dep']);
+    });
+
+    it('matches filename patterns at any depth without over-matching', () => {
+      expect(overrides.matches('packages/core/src/deep/auth.ts', ['**/auth.ts'])).toBe(true);
+      expect(overrides.matches('auth.ts', ['*.ts'])).toBe(true);
+      expect(overrides.matches('docs/README.md', ['**/*.ts'])).toBe(false);
+    });
+  });
 });

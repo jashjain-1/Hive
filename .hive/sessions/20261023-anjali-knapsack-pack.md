@@ -26,17 +26,21 @@
 4. **Explainability** (`packages/pack/src/explain.ts`)
    - Per-node factor breakdown and proof-matrix formatting.
 
-5. **Contracts** (`packages/types/src/index.ts`)
+5. **Overrides Manager** (`packages/pack/src/overrides.ts`)
+   - Enforced real Git-style glob rules for `force_include` / `force_exclude` (`**`, `*`, `?`) instead of substring checks.
+   - Explain engine now reports the exact override pattern that matched.
+
+6. **Contracts** (`packages/types/src/index.ts`)
    - Added intent analysis, proof matrix, cluster allocation, and cognitive trail types used by the pack engine.
 
-6. **Tests** (`packages/pack/test/pack.test.ts`)
-   - 5 tests covering intent weighting, budget/slack enforcement, cluster proof matrix, and multi-hop trails.
+7. **Tests** (`packages/pack/test/pack.test.ts`)
+   - 7 tests covering intent weighting, budget/slack enforcement, cluster proof matrix, multi-hop trails, and glob overrides.
    - ONNX pipeline mocked deterministically so the algorithmic suite runs offline without native dependencies.
 
 ## Verification
 
 - `npm run build` — passed for all workspaces.
-- `npm test -w @hivemind/pack` — 5/5 tests passed.
+- `npm test -w @hivemind/pack` — 7/7 tests passed.
 - `npm test` (repo-wide) — `@hivemind/core` suite fails on `web-tree-sitter` WASM loading in this environment; unrelated to `packages/pack`.
 
 ## Follow-ups

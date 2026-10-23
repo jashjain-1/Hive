@@ -35,12 +35,14 @@ export class ExplainEngine {
       // Check overrides
       const config = this.overrides.loadConfig();
       const targetStr = node.filePath ?? node.name;
-      if (config.force_include.some(p => targetStr.includes(p))) {
+      const includePattern = this.overrides.matchingPattern(targetStr, config.force_include);
+      const excludePattern = this.overrides.matchingPattern(targetStr, config.force_exclude);
+      if (includePattern) {
         status = 'FORCED_INCLUDED';
-        justification = `Forced include via .hive/overrides.json: ${config.force_include.find(p => targetStr.includes(p))}`;
-      } else if (config.force_exclude.some(p => targetStr.includes(p))) {
+        justification = `Forced include via .hive/overrides.json: ${includePattern}`;
+      } else if (excludePattern) {
         status = 'FORCED_EXCLUDED';
-        justification = `Forced exclude via .hive/overrides.json: ${config.force_exclude.find(p => targetStr.includes(p))}`;
+        justification = `Forced exclude via .hive/overrides.json: ${excludePattern}`;
       } else {
         status = 'DEFERRED';
         justification = `Below relevance threshold (score=${candidate.score.toFixed(2)}) | Not selected for task "${taskQuery.slice(0, 50)}"`;

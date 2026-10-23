@@ -83,9 +83,8 @@ export class OverridesManager {
 
     for (const node of candidates) {
       const targetStr = node.filePath || node.name;
-      
-      const isIncluded = config.force_include.some(pattern => targetStr.includes(pattern));
-      const isExcluded = config.force_exclude.some(pattern => targetStr.includes(pattern));
+      const isIncluded = this.matches(targetStr, config.force_include);
+      const isExcluded = this.matches(targetStr, config.force_exclude);
 
       if (isIncluded) {
         forcedIncludes.push(node);
@@ -95,5 +94,53 @@ export class OverridesManager {
     }
 
     return { forcedIncludes, forcedExcludes };
+  }
+
+  /** Returns true when the target path or name matches any of the glob patterns. */
+  public matches(target: string, patterns: string[]): boolean {
+    return this.matchingPattern(target, patterns) !== undefined;
+  }
+
+  /** Returns the first glob pattern matching the target, if any. */
+  public matchingPattern(target: string, patterns: string[]): string | undefined {
+    const normalized = target.replace(/\\/g, '/').replace(/^\.\//, '');
+    return patterns.find(pattern => this.globToRegExp(pattern).test(normalized));
+  }
+
+  /**
+   * Converts a Git-style glob into an anchored regular expression.
+   * Supports `**` (any depth, including none), `*` (within one path segment),
+   * and `?` (single non-separator character). Patterns without a slash match
+   * the file name at any depth, matching .gitignore-style expectations.
+   */
+  private globToRegExp(pattern: string): RegExp {
+    const normalized = pattern.replace(/\\/g, '/').replace(/^\.\//, '');
+    const expanded = normalized.includes('/') ? normalized : `**/${normalized}`;
+
+    let source = '';
+    for (let i = 0; i < expanded.length; i++) {
+      const char = expanded[i];
+      if (char === '*') {
+        if (expanded[i + 1] === '*') {
+          i++;
+          if (expanded[i + 1] === '/') {
+            i++;
+            source += '(?:.*/)?';
+          } else {
+            source += '.*';
+          }
+        } else {
+          source += '[^/]*';
+        }
+      } else if (char === '?') {
+        source += '[^/]';
+      } else if ('\\^$+?.()|{}[]'.includes(char)) {
+        source += `\\${char}`;
+      } else {
+        source += char;
+      }
+    }
+
+    return new RegExp(`^${source}$`);
   }
 }
