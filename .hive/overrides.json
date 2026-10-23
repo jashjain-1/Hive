@@ -1,13 +1,21 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "description": "User overrides for Hivemind Context Engine: Force-include or force-exclude files/symbols",
   "force_include": [],
   "force_exclude": [
     "**/node_modules/**",
     "**/.git/**",
     "**/dist/**",
     "**/build/**",
-    "**/*.min.js",
-    "**/*.map"
+    "**/venv/**",
+    "**/.venv/**",
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "**/*.pyo",
+    "**/*.pyd",
+    "**/*.dll",
+    "**/*.so",
+    "**/*.dylib",
+    "**/*.exe",
+    "**/*.obj",
+    "**/*.lib"
   ]
 }

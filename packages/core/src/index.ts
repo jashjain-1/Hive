@@ -1,0 +1,11 @@
+export { initializeDatabase, insertNode, casUpdateNode, insertLink, querySubtree, ftsSearch, rebuildClosure } from './db';
+export { AstChunker } from './ast/chunker';
+export { UniversalDocChunker } from './docs/universal-chunker';
+export { CrossModalEntityLinker } from './links/cross-linker';
+export { MerkleTree } from './merkle';
+export { rebuildClosure as rebuildClosureTable, isDescendant, getDescendants, getAncestors } from './closure';
+export { exportGraphToJson, importGraphFromJson } from './graph-exporter';
+export { IgnoreEngine } from './ignore/ignore-rules';
+export { SecretsRedactor } from './security/secrets-redactor';
+export { LiveFsWatcher } from './watcher/fs-watcher';
+export { GitImpactAnalyzer } from './git/git-impact';
