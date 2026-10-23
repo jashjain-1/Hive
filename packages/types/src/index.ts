@@ -56,6 +56,7 @@ export interface NodeRecord {
   parent: string | null;                    // Nullable only for tree roots (Invariant I4)
   kind: NodeKind;
   name: string;                             // Symbol name or file name
+  subsystem?: string;                       // Polyglot domain: 'backend', 'desktop', 'models', 'database', etc.
   filePath?: string;
   startLine?: number;
   endLine?: number;
@@ -159,6 +160,7 @@ export interface TaskCandidate {
 export interface PackRequest {
   task: string;                             // e.g. "Fix JWT token expiration in auth.ts"
   budget: number;                           // Target token budget (e.g. 2000 tokens)
+  subsystem?: string;                       // Optional domain filter (e.g. 'backend', 'desktop', 'models')
   slackPct?: number;                        // Reserve slack (default 0.10 -> 10%)
   explain?: boolean;                        // Whether to include explanation breakdowns
 }
@@ -166,6 +168,7 @@ export interface PackRequest {
 export interface PackSelection {
   nodeId: string;
   name: string;
+  subsystem?: string;                       // Polyglot domain
   filePath?: string;
   level: 0 | 1 | 2;
   tokens: number;

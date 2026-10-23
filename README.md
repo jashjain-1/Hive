@@ -196,6 +196,14 @@ flowchart LR
     end
 ```
 
+### 5.1 Support for Full-Board Multi-Tier Projects (ML, Desktop, Backend, Media)
+Large-scale real-world projects frequently combine desktop GUIs, backend APIs, machine learning pipelines, raw video/media assets, and multi-agent coordination markdown files:
+
+1. **Subsystem Domain Partitioning**: Nodes are tagged with their root domain (`backend/`, `desktop/`, `database/`, `models/`). Chunks in the active subsystem receive a **2.0x domain boost**, while irrelevant tiers are automatically pruned.
+2. **Heavy Binary and ML Model Stubbing**: Machine learning weights (`.onnx`, `.pb`, `.pt`, `.weights`) and compiled libraries (`.dll`, `.pyd`) are **never tokenized as raw text**. Instead, Hivemind creates an **$L_0$ Metadata Stub Node** capturing model input/output tensor shapes and byte size ($\approx 18$ tokens).
+3. **Multi-Agent Coordination Document Sectioning**: Large markdown instruction files (`AGENTS.md`, `CLAUDE.md`, `COORDINATION.md`) are partitioned into discrete heading sections, allowing agents to load a 30-token command snippet rather than an entire 4,000-line document.
+4. **Intelligent Deep-Ignore Filter**: Automatically excludes virtual environments (`.venv`, `venv`, `node_modules`), bytecode (`__pycache__`, `.pyc`), and media footage (`footage/`, `data/`). A repository with 50,000+ files indexes in under 150 MB RAM.
+
 ---
 
 ## 6. Human-Mind Associative Next-Hop Navigation

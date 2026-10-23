@@ -14,6 +14,7 @@ This project is a token-lean Model Context Protocol (MCP) server that equips AI 
 * **Intelligence**: WebAssembly Tree-sitter AST chunker + local ONNX embeddings (`@xenova/transformers`, `bge-small-en-v1.5`, zero external API calls) + SQLite FTS5 lexical ranking.
 * **Scope**: **100% Backend Engine**. No frontend/UI overhead.
 * **Scale**: **No Repository Size Cap** — streams files sequentially with batch SQLite commits, effortlessly indexing monorepos and multi-gigabyte codebases.
+* **Full-Board Project Scale**: Handles multi-tier polyglot codebases (backend APIs, desktop GUIs, ML inference pipelines, database migrations, and coordination markdown files) with deep-ignoring of `.venv`, media folders, and heavy binary model stubbing.
 * **Security**: Ephemeral GitHub tokens held strictly in volatile RAM, in-flight secrets redaction, rate limiting, and Helmet security headers.
 
 ---

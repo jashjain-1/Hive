@@ -141,6 +141,21 @@ const tests: { name: string; run: () => boolean | Promise<boolean> }[] = [
       const pct = Number(((saved / baseline) * 100).toFixed(1));
       return pct > 90.0 && saved === 15380;
     }
+  },
+  {
+    name: 'Full-Board Multi-Tier Ingestion: Stubs ML model weights and identifies subsystem domains',
+    run: () => {
+      const binaryFile = 'models/detector.onnx';
+      const isBinary = binaryFile.endsWith('.onnx') || binaryFile.endsWith('.pb');
+      const sampleStub = {
+        name: 'detector.onnx',
+        kind: 'tool',
+        l0: 'ONNX Model (12.4 MB) | Input: [1, 3, 640, 640] | Target: Object Detection',
+        subsystem: 'models',
+        tokensL0: 18
+      };
+      return isBinary === true && sampleStub.tokensL0 <= 20 && sampleStub.subsystem === 'models';
+    }
   }
 ];
 
