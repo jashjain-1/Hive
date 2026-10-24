@@ -4,7 +4,8 @@ dist/
 build/
 *.tsbuildinfo
 
-# Generated Hivemind state (tracked: .hive/sessions/, .hive/overrides.json)
+# Generated Hivemind state (tracked: .hive/overrides.json)
+.hive/sessions/
 .hive/tenants/
 .hive/workspaces/
 .hive/repos/
