@@ -16,6 +16,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { HIVE_CONSTANTS } from '@hivemind/types';
 import { validateIndexRepoUrl, isPrivateIpv4 } from './security/repo-url.js';
+import { buildGraphPayload, buildNodeDetail } from './ui/graph-payload.js';
+import { TOOL_CATALOG, buildServerInstructions } from './tools/catalog.js';
 import { SecretsRedactor } from '@hivemind/core';
 import { initializeDatabase, ftsSearch, querySubtree, insertNode, rebuildClosureTable } from '@hivemind/core';
 import { AstChunker } from '@hivemind/core';
@@ -153,10 +155,14 @@ function createTenantMcpServer(tenantId: string): McpServer {
   const nextHopPredictor = new NextHopPredictor();
   const explainEngine = new ExplainEngine(overrides);
 
-  const server = new McpServer({
-    name: `hivemind-context-${tenantId}`,
-    version: '2.0.0'
-  });
+  const server = new McpServer(
+    { name: `hivemind-context-${tenantId}`, version: '2.0.0' },
+    {
+      // Sent to the client at initialize time. This is how a model learns which tool to
+      // reach for first; without it, tool choice is guesswork from one-line descriptions.
+      instructions: buildServerInstructions(),
+    }
+  );
 
   // ── Tool 1: PEEK ──────────────────────────────────────────────────────────
   server.tool(
@@ -726,19 +732,23 @@ StreamableHTTP: /mcp?tenantId=default</pre>
   </section>
 
   <section class="card">
-    <h2>Try a tool via MCP</h2>
-    <p class="small">This form is a UI affordance, not a direct MCP channel. Use an MCP client for real tool calls.</p>
-    <select id="demoTool">
-      <option value="peek">peek</option>
-      <option value="expand">expand</option>
-      <option value="find">find</option>
-      <option value="pack">pack</option>
-      <option value="explain">explain</option>
-      <option value="impact">impact</option>
-      <option value="next">next</option>
-      <option value="pin">pin</option>
-    </select>
-    <p class="small">Example: select <code>pack</code> and ask your agent to compile context for a task.</p>
+    <h2>Graph view</h2>
+    <p>Open the <a href="/graph?tenantId=default">interactive graph</a> — hover a node for its score breakdown, click for its L0/L1/L2 content and links.</p>
+    <p class="small">Same page works standalone in any browser, and renders inline in MCP Apps hosts (Claude, VS Code, ChatGPT, Goose).</p>
+  </section>
+
+  <section class="card">
+    <h2>Tools (${TOOL_CATALOG.length})</h2>
+    <p class="small">Every tool this server exposes. The same text is sent to the model as server instructions at connect time. <a href="/tools.json">Raw catalog</a>.</p>
+    ${TOOL_CATALOG.map((t) => `
+      <details class="tool">
+        <summary><code>${t.name}</code> <span class="small">· ${t.group}</span></summary>
+        <p class="small">${t.summary}</p>
+        <p class="small"><strong>Use when:</strong> ${t.when}</p>
+        <p class="small"><strong>Args:</strong> <code>${t.args}</code></p>
+        <p class="small"><strong>Returns:</strong> ${t.returns}</p>
+        <pre>${t.example}</pre>
+      </details>`).join('')}
   </section>
 
   <footer>
@@ -1170,6 +1180,94 @@ app.get('/chat-start', (req: Request, res: Response) => {
   } catch (err) {
     res.status(500).json({ error: 'Failed to generate chat start card', details: String(err) });
   }
+});
+
+// 11b. Interactive graph UI — same data for the standalone page and the MCP Apps view.
+// The page is a single file served from dist/ui so it needs no CDN and no download.
+const GRAPH_HTML_PATH = path.join(__dirname, 'ui', 'graph.html');
+let graphHtmlCache: string | null = null;
+
+function readGraphHtml(): string {
+  if (graphHtmlCache) return graphHtmlCache;
+  graphHtmlCache = fs.readFileSync(GRAPH_HTML_PATH, 'utf8');
+  return graphHtmlCache;
+}
+
+app.get('/graph', (req: Request, res: Response) => {
+  try {
+    res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'");
+    res.type('html').send(readGraphHtml());
+  } catch (err) {
+    res.status(500).json({ error: 'Graph page was not built. Run the package build so dist/ui is populated.', details: String(err) });
+  }
+});
+
+app.get('/graph.json', (req: Request, res: Response) => {
+  const tenantId = ((req.query.tenantId as string) || (req.query.tenant as string) || 'public').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const task = typeof req.query.task === 'string' ? req.query.task.slice(0, 200) : undefined;
+  const dbPath = path.join(TENANTS_DIR, `${tenantId}.db`);
+
+  if (!fs.existsSync(dbPath)) {
+    res.status(404).json({ error: 'No tenant database found for ' + tenantId });
+    return;
+  }
+
+  try {
+    const db = initializeDatabase(dbPath);
+    const payload = buildGraphPayload(db, { tenant: tenantId, task });
+    // l0 is a one-line summary that can still carry a pasted secret.
+    for (const node of payload.nodes) node.name = SecretsRedactor.redact(node.name);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(payload);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to build graph payload', details: String(err) });
+  }
+});
+
+app.get('/graph/node', (req: Request, res: Response) => {
+  const tenantId = ((req.query.tenantId as string) || 'public').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const id = (req.query.id as string) || '';
+  const dbPath = path.join(TENANTS_DIR, `${tenantId}.db`);
+
+  if (!id) {
+    res.status(400).json({ error: 'id is required.' });
+    return;
+  }
+  if (!fs.existsSync(dbPath)) {
+    res.status(404).json({ error: 'No tenant database found for ' + tenantId });
+    return;
+  }
+
+  try {
+    const db = initializeDatabase(dbPath);
+    const detail = buildNodeDetail(db, id);
+    if (!detail) {
+      res.status(404).json({ error: 'Node not found in tenant ' + tenantId });
+      return;
+    }
+    // Best-effort redaction, same policy as tool responses.
+    detail.l0 = SecretsRedactor.redact(detail.l0);
+    if (detail.l1) detail.l1 = SecretsRedactor.redact(detail.l1);
+    if (detail.l2) detail.l2 = SecretsRedactor.redact(detail.l2);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(detail);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load node', details: String(err) });
+  }
+});
+
+// 11c. Tool catalog — what the 12 tools do, for the dashboard and for humans.
+app.get('/tools.json', (_req: Request, res: Response) => {
+  res.json({
+    count: TOOL_CATALOG.length,
+    groups: {
+      read: TOOL_CATALOG.filter((t) => t.group === 'read').map((t) => t.name),
+      context: TOOL_CATALOG.filter((t) => t.group === 'context').map((t) => t.name),
+      navigate: TOOL_CATALOG.filter((t) => t.group === 'navigate').map((t) => t.name),
+      mutate: TOOL_CATALOG.filter((t) => t.group === 'mutate').map((t) => t.name),
+    },
+    tools: TOOL_CATALOG,
+  });
 });
 
 // 12. Streaming Repository Ingestion Endpoint (NO REPO SIZE CAP)
