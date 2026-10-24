@@ -10,12 +10,10 @@
  * never written to disk or logged.
  */
 
-import { spawn, execSync } from 'child_process';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { exec as execPromise } from 'child_process';
-import { promisify } from 'util';
 import { initializeDatabase, insertNode, rebuildClosureTable, ftsSearch } from '@hivemind/core';
 import { AstChunker } from '@hivemind/core';
 import { UniversalDocChunker } from '@hivemind/core';
@@ -25,12 +23,13 @@ import { exportGraphToJson, generateGraphOverview } from '@hivemind/core';
 import { IgnoreEngine } from '@hivemind/core';
 import { NodeRecord } from '@hivemind/types';
 
-const exec = promisify(execPromise);
-
 async function main() {
-  const [, , repoUrl, tenantId, githubToken, statusFile, wasmDirArg] = process.argv;
+  // Args: <repoUrl> <tenantId> <statusFile>
+  // The GitHub token is no longer passed on argv. It comes from the GITHUB_TOKEN
+  // environment variable set transiently by the server when it spawns this worker.
+  const [, , repoUrl, tenantId, statusFile, wasmDirArg] = process.argv;
   if (!repoUrl || !tenantId || !statusFile) {
-    console.error('[IngestWorker] Usage: ingest-worker.js <repoUrl> <tenantId> <githubToken> <statusFile>');
+    console.error('[IngestWorker] Usage: ingest-worker.js <repoUrl> <tenantId> <statusFile>');
     process.exit(1);
   }
 
@@ -40,34 +39,61 @@ async function main() {
   const cloneDir = path.join(tempBase, `repo-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`);
   const dbPath = path.join(repoRoot, '.hive', 'tenants', `${tenantId}.db`);
 
+  // The GitHub token is transient: set in the env by the server that spawned this worker,
+  // used only for the git clone, and deleted after the clone spawn returns. It is never
+  // written to disk, never logged, and never embedded in the clone URL.
+  const githubToken = process.env.GITHUB_TOKEN ?? '';
+
   function writeStatus(status: any) {
     try { fs.writeFileSync(statusFile, JSON.stringify(status, null, 2)); } catch {}
   }
 
   async function gitClone() {
-    const args = ['clone'];
-    if (githubToken) {
-      // Embed token in URL for auth (ephemeral, in argv memory only, never logged)
+    // Build a safe argv array for `git clone`. No shell, no string interpolation,
+    // and no credentials embedded in the URL. The token is passed once via the env
+    // so it never appears in argv, in process listings, or on disk.
+    const gitArgs: string[] = ['clone'];
+
+    let sourceUrl: string;
+    try {
       const parsed = new URL(repoUrl);
-      parsed.username = 'x-access-token';
-      parsed.password = githubToken;
-      args.push(parsed.toString());
-    } else {
-      args.push(repoUrl);
+      // Reject non-https clones inside the worker as a second line of defense.
+      if (parsed.protocol !== 'https:') {
+        throw new Error('Only https Git URLs are accepted.');
+      }
+      // Strip any embedded credentials just in case the caller bypassed validation.
+      parsed.username = '';
+      parsed.password = '';
+      sourceUrl = parsed.href;
+    } catch (err) {
+      throw new Error(`Invalid repo URL: ${String(err)}`);
     }
-    args.push(cloneDir);
-    const { execPath } = process;
-    const child = spawn(execPath, ['-c', `git clone ${args.slice(1).join(' ')}`], {
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
-    // Simpler: use execSync with the token in the environment? No — token must not persist.
-    // Use a one-shot spawn and wait.
+
+    // Reassemble the URL on the https hosts already allowed by the server.
+    // github.com: use the token; other allowed hosts: plain clone.
+    const host = (new URL(sourceUrl)).hostname;
+    if (host === 'github.com' && githubToken) {
+      const ghParsed = new URL(sourceUrl);
+      ghParsed.username = 'x-access-token';
+      ghParsed.password = githubToken;
+      sourceUrl = ghParsed.href;
+    }
+
+      gitArgs.push(sourceUrl);
+    gitArgs.push(cloneDir);
+
     return new Promise<void>((resolve, reject) => {
+      const child = spawn('git', gitArgs, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, GITHUB_TOKEN: githubToken },
+      });
+      child.unref();
+      delete process.env.GITHUB_TOKEN;
       let stdout = '';
       let stderr = '';
-      child.stdout.on('data', d => { stdout += d.toString(); });
-      child.stderr.on('data', d => { stderr += d.toString(); });
-      child.on('close', code => {
+      child.stdout.on('data', (d) => { stdout += d.toString(); });
+      child.stderr.on('data', (d) => { stderr += d.toString(); });
+      child.on('close', (code) => {
         if (code === 0) resolve();
         else reject(new Error(`git clone failed (code ${code}): ${stderr.slice(0, 500)}`));
       });

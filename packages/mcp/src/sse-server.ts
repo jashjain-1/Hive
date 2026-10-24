@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
@@ -14,6 +15,7 @@ type StreamableServerTransport = typeof StreamableHTTPServerTransport;
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { HIVE_CONSTANTS } from '@hivemind/types';
+import { validateIndexRepoUrl, isPrivateIpv4 } from './security/repo-url.js';
 import { SecretsRedactor } from '@hivemind/core';
 import { initializeDatabase, ftsSearch, querySubtree, insertNode, rebuildClosureTable } from '@hivemind/core';
 import { AstChunker } from '@hivemind/core';
@@ -43,36 +45,109 @@ for (const dir of [TENANTS_DIR, REPO_TEMP_DIR]) {
 }
 
 // 1. Security & Protection Middlewares
+// `contentSecurityPolicy: false` keeps the hosted dashboard usable when origins shift
+// between preview and production; tighten in a locked-down deployment.
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: '*' }));
+
+// CORS: pin the allowed origins for this deployment.
+// The wildcard is intentionally removed because the MCP server exposes mutations and
+// an indexing endpoint that performs network activity on behalf of the caller.
+// If you need a wider set of allowed origins, add explicit entries above rather than
+// relaxing back to `*`.
+const ALLOWED_CORS_ORIGINS = new Set([
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:8100',
+  'https://hivemind-mcp.onrender.com',
+]);
+
+const TRUSTED_PROXY = process.env.TRUSTED_PROXY === '1';
+
+function clientIp(req: Request): string {
+  if (TRUSTED_PROXY && req.headers['x-forwarded-for']) {
+    return String(req.headers['x-forwarded-for']).split(',')[0].trim();
+  }
+  return req.ip ?? 'unknown';
+}
+
+app.use(cors({
+  origin: (origin, callback) => {
+    const originStr = (origin || '').trim();
+    if (!originStr || originStr === 'unknown') {
+      // Non-browser clients (curl, MCP SDKs, fetch with no Origin header) are allowed
+      // so the hosted MCP endpoint remains usable from the command line.
+      return callback(null, true);
+    }
+    if (ALLOWED_CORS_ORIGINS.has(originStr.toLowerCase())) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
+  credentials: false,
+}));
 app.use(express.json({ limit: '10mb' }));
 
-// Rate Limiting (60 requests/minute per IP)
-// NOTE: Render fronts with a proxy — if all traffic appears from one IP,
-// switch to trusting X-Forwarded-For or use a shared-memory store.
-const limiter = rateLimit({
+// Global request rate limit: baseline per client IP.
+// Render fronts with a proxy — if all traffic appears from one IP, enable TRUSTED_PROXY
+// (env var set to `1`) so the limiter can key on X-Forwarded-For.
+const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 60,
-  message: { error: 'Too many requests, please try again later.' }
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+  keyGenerator: (req) => clientIp(req),
 });
-app.use(limiter);
+app.use(globalLimiter);
+
+// Stricter limits for the most expensive endpoints.
+const indexRepoLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many indexing requests. Wait before starting another index.' },
+  keyGenerator: (req) => clientIp(req),
+});
+
+const sessionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many session connections. Wait before opening more.' },
+  keyGenerator: (req) => clientIp(req),
+});
 
 // 2. Map of Active Transports keyed by Session ID
 const activeTransports = new Map<string, SSEServerTransport | InstanceType<typeof StreamableHTTPServerTransport>>();
+
+// Upper bound on live MCP sessions. Free-tier containers have ~512 MB; each session opens
+// a SQLite handle and keeps an HTTP stream open, so an unbounded map is a cheap DoS.
+const MAX_ACTIVE_TRANSPORTS = Number(process.env.MAX_MCP_SESSIONS ?? 200);
 
 // 3. Shared secrets redaction — applied to EVERY tool response text
 function redact(text: string): string {
   return SecretsRedactor.redact(text);
 }
 
-// 4. Per-tenant helper: open/create the tenant SQLite DB
+// 4. Repo URL policy lives in ./security/repo-url so it can be unit tested and reused.
+// Only https hosts in the allowlist are accepted; local/file/private-IP URLs are rejected
+// before any network activity.
+
+// 5. Per-tenant helper: open/create the tenant SQLite DB
 function openTenantDb(tenantId: string) {
   const dbPath = path.join(TENANTS_DIR, `${tenantId}.db`);
   return initializeDatabase(dbPath);
 }
 
-// 5. Factory: create an MCP Server wired to real core/pack for a tenant
+// 6. Factory: create an MCP Server wired to real core/pack for a tenant
+// NOTE: the bypass described in README SECURITY.md — unbounded tools disabled in public mode —
+// is intentionally NOT implemented here. This server does not hide tools based on tenant mode.
+// If you want a private-only mode, gate at the transport/auth layer instead of hiding tools.
 function createTenantMcpServer(tenantId: string): McpServer {
+
+
   const db = openTenantDb(tenantId);
   const overrides = new OverridesManager(process.cwd());
   const nextHopPredictor = new NextHopPredictor();
@@ -504,6 +579,7 @@ function createTenantMcpServer(tenantId: string): McpServer {
 }
 
 // 6. Health check for Render / Container monitors
+// Intentionally minimal and non-sensitive: uptime only, no tenant data.
 app.get('/health', (req: Request, res: Response) => {
   res.json({
     status: 'healthy',
@@ -513,6 +589,12 @@ app.get('/health', (req: Request, res: Response) => {
     modelReady: true // Set false if embeddings engine not warmed
   });
 });
+
+// 6b. Public readiness stub for the paste-a-link setup: no tenant data.
+app.get('/ready', (req: Request, res: Response) => {
+  res.json({ ready: true });
+});
+
 
 // 7. Hosted dashboard home (lightweight, browser-only persona)
 // Includes a visibility/approval affordance for risky mutations and a portable-skill
@@ -562,10 +644,11 @@ app.get('/', (req: Request, res: Response) => {
 
   <section class="card">
     <h2>Connect from an AI client</h2>
-    <p>Point your MCP client at the hosted endpoint for your tenant, or enable the Hivemind skill where your client supports one.</p>
+    <p>Point your MCP client at the hosted endpoint for your tenant, or enable the Hivemind skill where your client supports one. No install required — just paste the URL into your AI client's MCP config.</p>
     <pre>SSE:  /sse?tenantId=default
 StreamableHTTP: /mcp?tenantId=default</pre>
     <p class="small">This dashboard does not replace the MCP client. It is a visibility surface for the browser-only persona.</p>
+    <p class="small">See <code>SECURITY.md</code> for the trust model and the limits of the free-tier public mode.</p>
   </section>
 
   <section class="card">
@@ -576,13 +659,14 @@ StreamableHTTP: /mcp?tenantId=default</pre>
 
   <section class="card">
     <h2>Start indexing a repo</h2>
+    <p class="small">Only <code>https://</code> Git URLs for allowed hosts are accepted. URLs with embedded credentials, local/private hosts, or unsupported schemes are rejected before any network activity.</p>
     <form id="indexForm">
       <div class="row">
         <label for="repoUrl">Repository URL</label>
         <input id="repoUrl" name="repoUrl" type="url" placeholder="https://github.com/owner/repo.git" required />
       </div>
       <div class="row">
-        <label for="githubToken">GitHub token <span class="small">(optional, ephemeral)</span></label>
+        <label for="githubToken">GitHub token <span class="small">(optional, ephemeral, not logged)</span></label>
         <input id="githubToken" name="githubToken" type="password" placeholder="ghp_... or github_pat_..." />
       </div>
       <button type="submit" class="btn">Start indexing</button>
@@ -911,9 +995,16 @@ app.post('/index-status', (req: Request, res: Response) => {
 });
 
 // 8. MCP SSE Stream Endpoint (`/sse`)
-app.get('/sse', async (req: Request, res: Response) => {
+app.get('/sse', sessionLimiter, async (req: Request, res: Response) => {
   const rawTenantId = (req.query.tenantId as string) || 'public';
   const tenantId = rawTenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  // Hard cap: every live session owns a transport, a McpServer and a SQLite handle.
+  // Without a cap an unauthenticated caller can hold the process open until it OOMs.
+  if (activeTransports.size >= MAX_ACTIVE_TRANSPORTS) {
+    res.status(503).json({ error: 'Server is at capacity for MCP sessions. Retry shortly.' });
+    return;
+  }
 
   const transport = new SSEServerTransport('/messages', res);
   const server = createTenantMcpServer(tenantId);
@@ -934,7 +1025,7 @@ app.get('/sse', async (req: Request, res: Response) => {
 // 9. MCP Streamable HTTP Endpoint (`/mcp`)
 // Dual-transport: modern clients that prefer Streamable HTTP can use /mcp.
 // Legacy SSE clients keep using /sse.
-app.post('/mcp', async (req: Request, res: Response) => {
+app.post('/mcp', sessionLimiter, async (req: Request, res: Response) => {
   // StreamableHTTP works as a POST endpoint; the SDK manages the session.
   // For a first pass we attach one transport per tenant default session.
   // A production implementation would key sessions by the MCP client session id.
@@ -951,11 +1042,16 @@ app.post('/mcp', async (req: Request, res: Response) => {
   await transport.handleRequest(req, res);
 });
 
-app.get('/mcp', async (req: Request, res: Response) => {
+app.get('/mcp', sessionLimiter, async (req: Request, res: Response) => {
   // Some StreamableHTTP clients initiate a session with a GET to obtain the
   // session template. The SDK's StreamableHTTPServerTransport supports this path.
   const rawTenantId = (req.query.tenantId as string) || 'public';
   const tenantId = rawTenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  if (activeTransports.size >= MAX_ACTIVE_TRANSPORTS) {
+    res.status(503).json({ error: 'Server is at capacity for MCP sessions. Retry shortly.' });
+    return;
+  }
 
   const transport = new StreamableHTTPServerTransport();
   const server = createTenantMcpServer(tenantId);
@@ -980,7 +1076,7 @@ app.get('/mcp', async (req: Request, res: Response) => {
 });
 
 // 10. MCP Message POST Endpoint (`/messages`)
-app.post('/messages', async (req: Request, res: Response) => {
+app.post('/messages', sessionLimiter, async (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string | undefined;
   if (!sessionId) {
     res.status(400).json({ error: 'sessionId query parameter required.' });
@@ -1023,7 +1119,7 @@ app.get('/index-status', (req: Request, res: Response) => {
 
 // 12a. Graph Overview — human-readable Markdown map of the context graph
 // Regenerates GRAPH_OVERVIEW.md from the live tenant DB and serves it.
-// Also produces a compact chat-start card for AI agents to paste at session open.
+// The Markdown is served as a best-effort redacted artifact (not a security boundary).
 app.get('/graph-overview', (req: Request, res: Response) => {
   const rawTenantId = (req.query.tenantId as string) || 'public';
   const tenantId = rawTenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1037,7 +1133,11 @@ app.get('/graph-overview', (req: Request, res: Response) => {
   try {
     const db = initializeDatabase(dbPath);
     const overviewPath = generateGraphOverview({ tenantId, db, outputDir: REPO_TEMP_DIR });
-    const markdown = fs.readFileSync(overviewPath, 'utf8');
+    let markdown = fs.readFileSync(overviewPath, 'utf8');
+    // Best-effort in-flight redaction on the served Markdown. This is convenience,
+    // not a guarantee — do not rely on `/graph-overview` to hide secrets.
+    const beforeLen = markdown.length;
+    markdown = SecretsRedactor.redact(markdown);
     res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
     res.setHeader('Content-Disposition', 'inline; filename="GRAPH_OVERVIEW.md"');
     res.send(markdown);
@@ -1049,6 +1149,7 @@ app.get('/graph-overview', (req: Request, res: Response) => {
 // 12b. Chat-Start Card — compact < 300 token summary for AI agents
 // An agent calls this at the start of every session and pastes the result.
 // The card updates every time the graph changes (after indexing or writes).
+// Best-effort redacted for convenience; see the README security note.
 app.get('/chat-start', (req: Request, res: Response) => {
   const rawTenantId = (req.query.tenantId as string) || 'public';
   const tenantId = rawTenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1062,7 +1163,8 @@ app.get('/chat-start', (req: Request, res: Response) => {
 
   try {
     const db = initializeDatabase(dbPath);
-    const card = generateChatStartCard({ tenantId, db, outputDir: REPO_TEMP_DIR, task });
+    let card = generateChatStartCard({ tenantId, db, outputDir: REPO_TEMP_DIR, task });
+    card = SecretsRedactor.redact(card);
     res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
     res.send(card);
   } catch (err) {
@@ -1071,7 +1173,7 @@ app.get('/chat-start', (req: Request, res: Response) => {
 });
 
 // 12. Streaming Repository Ingestion Endpoint (NO REPO SIZE CAP)
-app.post('/index-repo', async (req: Request, res: Response) => {
+app.post('/index-repo', indexRepoLimiter, async (req: Request, res: Response) => {
   const { repoUrl, tenantId } = req.body;
   const githubToken = req.headers['x-github-token'] as string | undefined;
 
@@ -1084,20 +1186,60 @@ app.post('/index-repo', async (req: Request, res: Response) => {
   const tenantDbPath = path.join(TENANTS_DIR, `${safeTenantId}.db`);
   const db = initializeDatabase(tenantDbPath);
 
-  console.log(`[Streaming Indexer] Starting indexing for repo: ${repoUrl} (Tenant: ${safeTenantId})`);
+  // Validate and restrict the indexing URL BEFORE any network activity.
+  const validated = validateIndexRepoUrl(repoUrl);
+  if ('error' in validated) {
+    res.status(400).json({ error: validated.error });
+    return;
+  }
+
+  // SSRF guard: verify host resolves to a public address before cloning.
+  // This is a cheap, same-request check: if DNS points the URL at a local/private IP,
+  // reject it even if the host string looks innocuous.
+  try {
+    const dnsResults = await import('dns').then((dns) => dns.promises.resolve4(validated.host));
+    const bad = dnsResults?.some((a) => isPrivateIpv4(a));
+    if (bad) {
+      res.status(400).json({ error: `This host resolves to a private/non-routable address and is not accepted.` });
+      return;
+    }
+  } catch (dnsErr) {
+    // If DNS cannot resolve, do not start a clone; return a clear error.
+    res.status(400).json({ error: `Could not resolve host ${validated.host}.` });
+    return;
+  }
+
+  console.log(`[Streaming Indexer] Starting indexing for repo: ${validated.repoUrl} (Tenant: ${safeTenantId})`);
   console.log(`[Streaming Pipeline] No repo size cap enabled. Streaming AST parsing and batch SQLite commits active.`);
+  console.log(`[Streaming Indexer] Security: URL validated (https, host allowlist, no creds). Token passed via child env, not URL.`);
 
   // Spawn a detached child process to do the ingestion so the HTTP response returns immediately.
   // The child writes progress to a status file the client can poll via /index-status.
   const { spawn } = await import('child_process');
   const statusFile = path.join(REPO_TEMP_DIR, `${safeTenantId}.status.json`);
 
-  // Write initial status
-  fs.writeFileSync(statusFile, JSON.stringify({ status: 'cloning', startedAt: Date.now(), repoUrl, tenantId: safeTenantId }, null, 2));
+  // Write initial status (do not write the GitHub token to disk)
+  fs.writeFileSync(statusFile, JSON.stringify({ status: 'cloning', startedAt: Date.now(), repoUrl: validated.repoUrl, hint: validated.hint, tenantId: safeTenantId }, null, 2));
 
-  const child = spawn(process.execPath, [path.join(__dirname, 'ingest-worker.js'), repoUrl, safeTenantId, githubToken ?? '', statusFile], {
+  // Pass tenantId + token via the child's environment, not the URL or argv.
+  // The worker reads GITHUB_TOKEN from env and calls git clone with an args array.
+  // Hand the worker a minimal environment instead of inheriting the server's. Anything the
+  // server holds (other API keys, cloud tokens, proxy credentials) must not be reachable from
+  // a process that runs `git` against a URL chosen by an anonymous caller.
+  const childEnv: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH,
+    HOME: process.env.HOME ?? process.env.USERPROFILE,
+    TMPDIR: process.env.TMPDIR ?? process.env.TEMP,
+    SystemRoot: process.env.SystemRoot,
+    NODE_ENV: 'production',
+    CI: '1',
+    HIVE_TENANT_ID: safeTenantId,
+    GITHUB_TOKEN: githubToken ?? '',
+  };
+  const child = spawn(process.execPath, [path.join(__dirname, 'ingest-worker.js'), validated.repoUrl, safeTenantId, statusFile], {
     detached: true,
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: childEnv,
   });
   child.unref();
 
@@ -1115,9 +1257,10 @@ app.post('/index-repo', async (req: Request, res: Response) => {
   res.json({
     status: 'indexing_started',
     tenantId: safeTenantId,
-    repoUrl,
+    repoUrl: validated.repoUrl,
+    hint: validated.hint,
     jobFile: statusFile,
-    message: 'Streaming AST indexer initiated in background. Poll /index-status?tenantId=' + safeTenantId + ' for progress. Arbitrary repository size supported via chunked streaming.'
+    message: 'Streaming AST indexer initiated in background. Poll /index-status?tenantId=' + safeTenantId + ' for progress. Arbitrary repo size supported via chunked streaming. Only https Git hosts in the allowlist are accepted; local/file/private hosts are rejected.'
   });
 });
 

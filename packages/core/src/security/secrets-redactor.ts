@@ -33,7 +33,16 @@ export class SecretsRedactor {
     { pattern: /-----BEGIN [A-Z\s]+PRIVATE KEY-----[\s\S]*?-----END [A-Z\s]+PRIVATE KEY-----/g, replacement: '[REDACTED_PRIVATE_KEY]' },
 
     // Common Password assignments in code/configs
-    { pattern: /(api[_-]?key|secret|password|passwd|token)\s*[:=]\s*["']([^"']{8,})["']/gi, replacement: '$1: "[REDACTED_CREDENTIAL]"' }
+    { pattern: /(api[_-]?key|secret|password|passwd|token)\s*[:=]\s*["']([^"']{8,})["']/gi, replacement: '$1: "[REDACTED_CREDENTIAL]"' },
+
+    // x-access-token PATs embedded in HTTPS URLs (collapse the token portion)
+    { pattern: /([\w\-]+\.com\/)(x-access-token:)([a-zA-Z0-9_\-]{20,})/gi, replacement: '$1[REDACTED_GITHUB_TOKEN_IN_URL]' },
+
+    // Private/loopback IPv4 literals inside URLs (SSRF exfiltration indicators).
+    { pattern: /https?:\/\/(?:10|127)\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?/gi, replacement: '[REDACTED_PRIVATE_IP_URL]' },
+    { pattern: /https?:\/\/192\.168\.\d{1,3}\.\d{1,3}(?::\d+)?/gi, replacement: '[REDACTED_PRIVATE_IP_URL]' },
+    { pattern: /https?:\/\/172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}(?::\d+)?/gi, replacement: '[REDACTED_PRIVATE_IP_URL]' },
+    { pattern: /https?:\/\/169\.254\.\d{1,3}\.\d{1,3}(?::\d+)?/gi, replacement: '[REDACTED_PRIVATE_IP_URL]' },
   ];
 
   /**
@@ -43,8 +52,17 @@ export class SecretsRedactor {
     if (!text || typeof text !== 'string') return text;
 
     let sanitized = text;
+    // Avoid pathological regex backtracking on very large blobs.
+    if (sanitized.length > 200_000) {
+      sanitized = sanitized.slice(0, 200_000) + sanitized.slice(-1_000);
+    }
     for (const rule of this.RULES) {
-      sanitized = sanitized.replace(rule.pattern, rule.replacement);
+      try {
+        sanitized = sanitized.replace(rule.pattern, rule.replacement);
+      } catch {
+        // If a rule catastrophically backtracks on odd input, keep the text and skip it.
+        continue;
+      }
     }
     return sanitized;
   }
