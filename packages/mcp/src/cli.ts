@@ -7,7 +7,13 @@
 import { HiveMcpServer } from './server';
 
 async function main() {
-  const server = new HiveMcpServer();
+  const server = new HiveMcpServer({
+    repoRoot: process.env.HIVE_REPO_ROOT ?? process.cwd(),
+    dbPath: process.env.HIVE_DB_PATH,
+    tenantId: process.env.HIVE_TENANT_ID ?? 'default',
+    embeddings: process.env.HIVE_EMBEDDINGS === 'off' ? 'off' : 'auto',
+    allowLocalIndex: true
+  });
   await server.start();
 }
 
