@@ -366,6 +366,34 @@ For clients that prefer Streamable HTTP, point them at the same host's `/mcp` en
 }
 ```
 
+#### Copilot Chat (`copilot-config.json` or VS Code settings)
+Copilot supports custom MCP servers via its connector configuration. Point it at the same SSE endpoint:
+```json
+{
+  "mcpServers": {
+    "hivemind": {
+      "url": "https://<app-name>.onrender.com/sse?tenantId=default"
+    }
+  }
+}
+```
+
+#### Any MCP-compatible client (ChatGPT, Windsurf, Cline, continue.dev, etc.)
+Any client implementing the [Model Context Protocol](https://modelcontextprotocol.io) can connect to Hivemind. Use the SSE endpoint for streaming or the Streamable HTTP endpoint for modern clients:
+
+| Client | Config file | Endpoint |
+|--------|-------------|----------|
+| Claude Desktop | `claude_desktop_config.json` | `/sse?tenantId=default` |
+| Cursor IDE | `.cursor/mcp.json` | `/sse?tenantId=default` |
+| Windsurf | `windsurf/config/mcp.json` | `/sse?tenantId=default` |
+| Antigravity | `antigravity.json` | `/sse?tenantId=default` |
+| Copilot Chat | `copilot-config.json` | `/sse?tenantId=default` |
+| ChatGPT (MCP) | connector URL | `/mcp?tenantId=default` |
+| Cline / continue.dev | `mcp.json` | `/sse?tenantId=default` |
+| Any MCP host | — | `/mcp?tenantId=default` (Streamable HTTP) |
+
+All clients share the same backend. One deploy serves every AI model.
+
 ### 10.3 Hosted Dashboard and Visibility Surface
 
 The same backend also serves a lightweight hosted dashboard at `/` for the browser-only persona. It is not a full app; it is the visibility-and-approval surface for users who do not want to configure an AI client just to see status or approve risky actions.
@@ -378,7 +406,27 @@ Today the dashboard exposes:
 
 The primary day-to-day interaction is still through the connected AI client. The dashboard is the secondary surface for status and governance.
 
-### 10.4 Portable Skill and Discovery Path
+### 10.4 Graph Overview and Chat-Start Card (Multi-Model Proofs)
+
+Every Hivemind MCP server exposes two endpoints designed for AI agents to prove context at the start of a session:
+
+- **`GET /graph-overview?tenantId=<id>`** — Returns a full `GRAPH_OVERVIEW.md` document containing:
+  - Graph statistics (nodes, links, per-kind and per-tree breakdowns).
+  - Top files by chunk count.
+  - Top 15 most-connected symbols (blast-radius hubs).
+  - A Mermaid graph diagram of the code, knowledge, and memory trees with weighted links.
+  - Agent navigation hints (top 5 starting points).
+  - Regenerated automatically after every indexing run and every notebook write.
+
+- **`GET /chat-start?tenantId=<id>&task=<task>`** — Returns a compact `< 300 token` Markdown card an AI agent pastes at the top of every chat:
+  - Total nodes and links indexed.
+  - Top 5 symbols by connectivity with their L0 gist.
+  - A pointer to `GRAPH_OVERVIEW.md` for the full visual map.
+  - A prompt to run `peek <nodeId>` or `pack "<task>"`.
+
+This means any connected AI agent — Claude, Cursor, Windsurf, Antigravity, Copilot, or ChatGPT — can call these endpoints at session start and receive a live, updating graph overview. The artifact updates every time the graph changes.
+
+### 10.5 Portable Skill and Discovery Path
 
 Hivemind is meant to be consumed two ways:
 1. As an MCP server reached via SSE or Streamable HTTP.
