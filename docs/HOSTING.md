@@ -1,254 +1,183 @@
-# Hosting Hivemind as an MCP server
+# Hosting Hivemind
 
-Hivemind is one MCP server with two transports:
+Hivemind exposes one MCP server through three transports:
 
-| Transport | Endpoint | Use it when |
+| Transport | Endpoint | Use when |
 |---|---|---|
-| **Streamable HTTP** | `POST /mcp?tenantId=<id>` | Remote clients (Claude connectors, Cursor, VS Code, custom agents). Stateless and reconnect-safe. |
-| **Legacy SSE** | `GET /sse?tenantId=<id>` + `POST /messages` | Older MCP clients that only speak SSE. |
-| **stdio** | `node packages/mcp/dist/main.js` | Local, offline, single-developer use. No HTTP server involved. |
+| Streamable HTTP | `POST /mcp?tenantId=<id>` | Remote clients, custom agents, and most modern MCP hosts |
+| Legacy SSE | `GET /sse?tenantId=<id>` and `POST /messages` | Older MCP clients that only implement SSE |
+| stdio | `node packages/mcp/dist/main.js` | Local, offline, single-developer use |
 
-The tool surface is identical on all three. Pick one transport per client, not both.
-
----
-
-## 1. Local stdio (fastest path)
-
-### Prerequisites
-
-- Node.js 20 or newer (`node -v`)
-- Git on `PATH` (`git --version`)
-- A repository you want the agent to understand
-
-### Build and run
-
-```bash
-npm ci
-npm run build
-
-# Smoke-test the server before wiring a client:
-node packages/mcp/dist/main.js --repo /absolute/path/to/your/repo
-```
-
-The process prints one line to stderr and then waits for JSON-RPC on stdin. That is
-normal. Press `Ctrl+C` to stop it.
-
-Options:
-
-```text
--r, --repo <path>     Repository to index (default: cwd or HIVE_REPO_ROOT)
-    --db <path>       SQLite path (default: <repo>/.hive/tenants/<tenant>.db)
-    --tenant <id>     Tenant namespace (default: default)
-    --no-embeddings   Lexical-only mode; no ONNX model download
--h, --help            Show help
-```
-
-Verify the tools without an editor:
-
-```bash
-npm run inspector
-# opens the MCP Inspector against the stdio server with --repo .
-```
-
-### Claude Desktop (local stdio)
-
-Config file locations:
-
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-- Linux: `~/.config/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "hivemind": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/Hive/packages/mcp/dist/main.js",
-        "--repo",
-        "/absolute/path/to/your/project"
-      ],
-      "env": {
-        "HIVE_EMBEDDINGS": "off"
-      }
-    }
-  }
-}
-```
-
-Use an absolute `node` path if Claude cannot find Node (`C:\\Program Files\\nodejs\\node.exe`
-on Windows, `/usr/local/bin/node` or `which node` elsewhere). Restart Claude Desktop
-completely after editing the file. The server appears under the tools/connectors menu.
-
-> Use `dist/main.js`, **not** `dist/index.js`. `index.js` is the library entrypoint; it
-> does not start a transport.
-
-### Cursor (local stdio)
-
-Project config `.cursor/mcp.json` (or `~/.cursor/mcp.json` for every project):
-
-```json
-{
-  "mcpServers": {
-    "hivemind": {
-      "type": "stdio",
-      "command": "node",
-      "args": [
-        "${workspaceFolder}/packages/mcp/dist/main.js",
-        "--repo",
-        "${workspaceFolder}"
-      ],
-      "env": {
-        "HIVE_EMBEDDINGS": "off"
-      }
-    }
-  }
-}
-```
-
-This assumes Cursor opened the Hive repository itself. If you want Hivemind for a
-different project, point both paths at that project and use the installed Hive path for
-`main.js`.
-
-### VS Code (local stdio)
-
-`.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "hivemind": {
-      "type": "stdio",
-      "command": "node",
-      "args": [
-        "${workspaceFolder}/packages/mcp/dist/main.js",
-        "--repo",
-        "${workspaceFolder}"
-      ]
-    }
-  }
-}
-```
+The tool surface is identical on all three. Choose one transport per client, not both.
 
 ---
 
-## 2. Hosted Streamable HTTP
+## 1. Deployment topology
 
-### 2.1 Run the container locally
-
-```bash
-docker build -t hivemind-mcp .
-
-docker run --rm -p 3000:3000 \
-  -e HIVE_API_KEY=change-me \
-  -e HIVE_EMBEDDINGS=off \
-  -v hivemind-data:/app/.hive \
-  hivemind-mcp
+```mermaid
+flowchart TD
+  GH["GitHub main branch"] --> BP["Render blueprint or Docker build"]
+  BP --> IMG["Node 20 runtime image"]
+  IMG --> SVC["hivemind-mcp service"]
+  SVC --> MCP["MCP transports /mcp and /sse"]
+  SVC --> UI["Graph UI and REST surfaces"]
+  SVC --> DB[("Per-tenant SQLite WAL")]
+  SVC --> WS["Tenant workspaces and Git clones"]
+  SVC --> OV["Overrides and overview exports"]
+  DISK["Persistent disk"] --> SVC
+  USERS["Claude, ChatGPT, Cursor, VS Code, curl"] --> MCP
+  BROWSER["Browser"] --> UI
 ```
 
-Check it:
+The service runs entirely on the cloud host. No local process is required for hosted clients.
 
-```bash
-curl http://localhost:3000/health
-curl -H "Authorization: Bearer change-me" http://localhost:3000/
-```
+---
 
-The root document lists the active endpoints and whether auth is required. `/health`
-and `/` are public; everything else requires the bearer token when `HIVE_API_KEY` is set.
+## 2. Render blueprint
 
-`-v hivemind-data:/app/.hive` keeps SQLite databases and cloned repositories across
-container restarts. Without a volume, hosted state is ephemeral.
+`render.yaml` defines a Docker web service with a health check, a generated API key, conservative free-tier limits, and lexical ranking enabled.
 
-### 2.2 Render (one-click blueprint)
-
-`render.yaml` defines a Docker web service with a `/health` check, conservative
-free-tier limits, `HIVE_EMBEDDINGS=off`, and a generated `HIVE_API_KEY`.
-
-1. Push this repository to GitHub. The blueprint deploys the `main` branch.
-2. Open `https://render.com/deploy?repo=https://github.com/jashjain-1/Hive`, or in
-   Render: **New > Blueprint**, select the repository, apply.
-3. Wait for the first build. `GET https://<service>.onrender.com/health` should return
-   `{"status":"healthy", ...}`.
-4. Open the service's **Environment** tab and copy `HIVE_API_KEY`. If Render does not
-   reveal the generated value, replace it with your own random string and redeploy.
-5. Your MCP endpoint is:
+1. Open `https://render.com/deploy?repo=https://github.com/jashjain-1/Hive`.
+2. Authorize Render to read the repository and apply the blueprint.
+3. Wait for the image build. `GET https://<service>.onrender.com/health` must return `{"status":"healthy"}`.
+4. Copy `HIVE_API_KEY` from the service's Environment tab. If the value is not shown, replace it with your own random string and redeploy.
+5. The MCP endpoint is:
 
    ```text
    https://<service>.onrender.com/mcp?tenantId=default
    ```
 
-6. Prove every tool works on that link:
+6. Verify every tool on the live link:
 
    ```bash
-   BASE_URL=https://<service>.onrender.com API_KEY=<HIVE_API_KEY> \
-     REPO_URL=https://github.com/vercel/ms node scripts/verify-hosted-tools.mjs
+   BASE_URL=https://<service>.onrender.com \
+   API_KEY=<HIVE_API_KEY> \
+   REPO_URL=https://github.com/vercel/ms \
+   node scripts/verify-hosted-tools.mjs
    ```
 
-Free-plan caveats:
+### Free-plan behavior
 
-- **Ephemeral disk.** Databases and cloned repos disappear on restart or redeploy. For
-  durable memory, use a paid instance with a persistent disk mounted at `/var/hive-data`
-  and set `HIVE_DATA_ROOT=/var/hive-data` (state lands in
-  `/var/hive-data/.hive/...`). Point `HIVE_DATA_ROOT` at the disk's parent/mount
-  directory, not at a directory named `.hive`.
-- **Cold starts.** A sleeping free instance can take ~50 seconds to answer the first
-  request. Clients may time out once; retry.
-- **Memory.** `HIVE_EMBEDDINGS=off` is set in the blueprint. Enable embeddings on a paid
-  plan with enough RAM for the ONNX model, or leave them off; lexical + graph ranking
-  still works.
-- **Single instance.** SQLite and the in-memory tenant cache are per process. Do not
-  scale to multiple replicas sharing one disk.
+- 512 MB RAM. The blueprint sets `HIVE_EMBEDDINGS=off`, so lexical and graph ranking run without the ONNX model.
+- 3000-file index cap through `HIVE_MAX_FILES`.
+- Ephemeral disk. Tenant databases, clones, pins, and overview exports are lost on sleep or redeploy.
+- Cold starts can take up to a minute. A client may time out once and succeed on retry.
 
-### 2.3 Any other Docker host
+For durable state, attach a Render Disk, set `HIVE_DATA_ROOT` to the mount path, and keep one instance. SQLite is per process, so horizontal scaling against one disk is not supported.
 
-Set `PORT`, `HIVE_API_KEY`, and a persistent volume. Put TLS in front (Render, Fly,
-Railway, Caddy, nginx, or a load balancer). If your proxy buffers responses, disable
-buffering for `/sse` and `/mcp` so event streams flush immediately.
+### Recommended production settings
+
+| Variable | Value | Reason |
+|---|---|---|
+| `HIVE_API_KEY` | Long random secret | Required for any public deployment |
+| `HIVE_ALLOW_QUERY_KEY` | `false` unless a connector needs it | Keeps the key out of access logs |
+| `HIVE_MAX_FILES` | Plan-dependent, start at 3000 | Bounds memory and request time |
+| `HIVE_MAX_TENANTS` | 50 or lower | Bounds open SQLite handles |
+| `HIVE_EMBEDDINGS` | `off` on small plans, `auto` with enough RAM | The model is local and optional |
+| `HIVE_CORS_ORIGIN` | Known origin when browser-only | Default is `*` for connector compatibility |
+| `HIVE_DATA_ROOT` | Mount path when a disk is attached | Keeps state outside the image |
+
+---
+
+## 3. Docker on a cloud host
 
 ```bash
+docker build -t hivemind-mcp .
+
 docker run -d --name hivemind \
   -p 3000:3000 \
-  -e PORT=3000 \
   -e HIVE_API_KEY="$(openssl rand -hex 24)" \
+  -e HIVE_ALLOW_QUERY_KEY=true \
   -e HIVE_EMBEDDINGS=off \
   -e HIVE_MAX_FILES=3000 \
   -v /srv/hivemind/.hive:/app/.hive \
   hivemind-mcp
 ```
 
-Use one instance per trust boundary. The tenant id isolates databases, not users.
+Run this on a cloud VM, Fly.io, Railway, or another container platform. Terminate TLS at the platform or a reverse proxy. Disable response buffering on `/mcp` and `/sse`.
+
+The image runs as the unprivileged `node` user. A bind-mounted data directory must be writable by that user, typically UID 1000.
+
+Health check:
+
+```bash
+curl -s http://localhost:3000/health
+```
+
+The service document at `/` lists endpoints and whether authentication is required.
 
 ---
 
-## 3. Point a remote client at the gateway
+## 4. Persistence and backups
 
-### Claude Desktop / Claude web (custom connector)
+The gateway writes under `HIVE_DATA_ROOT`:
 
-Remote connectors are brokered through Anthropic's cloud, so the URL must be publicly
-reachable over HTTPS (not `localhost` for a remote connector).
+```text
+.hive/
+  tenants/<tenant>.db        SQLite WAL graph, receipts, memory, tasks, signals
+  workspaces/<tenant>/       Tenant workspace
+  repos/<hash>/              Shallow Git clones
+  overviews/<tenant>/        Generated GRAPH_OVERVIEW.md files
+```
 
-1. **Customize > Connectors > Add custom connector**.
-2. Name it `Hivemind`, URL `https://<service>.onrender.com/mcp?tenantId=default&apiKey=<HIVE_API_KEY>`.
-3. Authentication: **No sign in**.
-4. If your organization has the fixed-request-header beta, remove `&apiKey=` from the
-   URL and add a request header `Authorization` = `Bearer <HIVE_API_KEY>` instead.
-5. Save, then enable the connector in a conversation.
+SQLite runs in WAL mode, so a live database consists of `.db`, `.db-wal`, and `.db-shm`.
 
-`HIVE_ALLOW_QUERY_KEY=true` is required for the URL-key form; the Render blueprint sets
-it. The key will appear in access logs, so header auth is preferable when available.
+### Backup
 
-Claude Desktop's `claude_desktop_config.json` is for local stdio servers; remote servers
-are added through the Connectors UI.
+Stop the process, then copy the database files. Alternatively use SQLite's online backup:
 
-### ChatGPT (custom app)
+```bash
+sqlite3 .hive/tenants/default.db ".backup '/backup/default.db'"
+```
 
-1. Enable developer mode, then add a custom connector/app.
-2. URL: `https://<service>.onrender.com/mcp?tenantId=default&apiKey=<HIVE_API_KEY>`.
-3. Authentication: **No authentication**. ChatGPT supports OAuth or no-auth for remote
-   MCP; this server does not run an OAuth authorization server, so the URL key is the
-   supported path. Keep the URL private.
+### Restore
 
-### Cursor (remote)
+Stop the service, replace the database file with the backup, and start the service. Re-index if the workspace or clones are missing.
+
+### Durability notes
+
+- Pins are stored in the indexed workspace. Re-indexing a Git URL recreates that workspace.
+- Overview files are generated on demand and can be recreated.
+- Memory, tasks, signals, and pack receipts live in the tenant database.
+
+---
+
+## 5. Connecting clients
+
+When `HIVE_API_KEY` is set, protected endpoints accept either:
+
+```http
+Authorization: Bearer <HIVE_API_KEY>
+```
+
+or, when `HIVE_ALLOW_QUERY_KEY=true`:
+
+```text
+/mcp?tenantId=default&apiKey=<HIVE_API_KEY>
+```
+
+Prefer the header form where the client supports it. The query form places the key in access logs.
+
+Tenant selection can also use the `X-Hive-Tenant` header instead of `?tenantId=`. Use one tenant per project.
+
+### Claude
+
+Remote servers are added through the Connectors interface; `claude_desktop_config.json` is for local stdio servers.
+
+1. Customize, then Connectors, then Add custom connector.
+2. Authentication: No sign-in.
+3. URL: `https://<service>.onrender.com/mcp?tenantId=default&apiKey=<HIVE_API_KEY>`.
+4. If your organization has the fixed-header beta, remove `&apiKey=` and add the `Authorization` request header instead.
+5. Enable the connector in a conversation and call `status`.
+
+### ChatGPT
+
+1. Enable developer mode and create a custom connector or app.
+2. Transport: Streamable HTTP.
+3. URL: `https://<service>.onrender.com/mcp?tenantId=default&apiKey=<HIVE_API_KEY>`.
+4. Authentication: No authentication. This server does not implement an OAuth authorization server, so the URL key is the supported path.
+
+### Cursor
 
 `.cursor/mcp.json`:
 
@@ -265,10 +194,7 @@ are added through the Connectors UI.
 }
 ```
 
-Cursor tries Streamable HTTP first and can fall back to SSE. The `/mcp` endpoint is
-stateless, so restarts do not strand the client with an expired session.
-
-### VS Code (remote)
+### VS Code
 
 `.vscode/mcp.json`:
 
@@ -288,57 +214,21 @@ stateless, so restarts do not strand the client with an expired session.
 
 ### Legacy SSE clients
 
-If a client only accepts an SSE URL, use
-`https://<service>.onrender.com/sse?tenantId=default` and the same bearer header. SSE
-sessions live in memory and expire when the process restarts; reconnect afterward.
-
-### Tenant selection
-
-Prefer the `X-Hive-Tenant` header over `?tenantId=` so tenant ids stay out of access
-logs:
-
-```http
-X-Hive-Tenant: my-team
-Authorization: Bearer <HIVE_API_KEY>
-```
+Use `https://<service>.onrender.com/sse?tenantId=default` with the same credentials. SSE sessions live in memory and are lost on restart; reconnect after a deploy.
 
 ---
 
-### 3.1 Browser-only use (no client install)
+## 6. Indexing repositories
 
-Open `https://<service>.onrender.com/graph?tenantId=default`. The page shell is public;
-it prompts once for `HIVE_API_KEY` and keeps it in `sessionStorage` for that tab. From
-there you can search the graph, include/exclude nodes, preview L0/L1/L2 content, watch
-the token budget, and copy a hand-off pack.
-
-The Markdown artifacts are one request each:
-
-```bash
-curl -s https://<service>.onrender.com/graph-overview?tenantId=default \
-  -H "Authorization: Bearer <HIVE_API_KEY>"
-curl -s "https://<service>.onrender.com/chat-start?tenantId=default&task=auth%20bug" \
-  -H "Authorization: Bearer <HIVE_API_KEY>"
-curl -s https://<service>.onrender.com/index-status?tenantId=default \
-  -H "Authorization: Bearer <HIVE_API_KEY>"
-```
-
----
-
-## 4. Index a repository on a hosted server
-
-Local path indexing is disabled on the gateway. Use a public `https` Git URL, or add a
-token for a private repository.
+Hosted indexing accepts a public `https://` Git URL. Local path indexing is disabled on the gateway.
 
 ### Through the MCP tool
-
-Ask the agent to call:
 
 ```json
 { "tool": "index", "arguments": { "target": "https://github.com/owner/repo" } }
 ```
 
-This clones into the tenant workspace, indexes, exports `.hive/graph.json`, and returns
-counts. Large repositories can take minutes; the tool call stays open.
+The call stays open until the clone and index complete. Large repositories can exceed client or platform request timeouts; index a subdirectory or raise the limits on a larger plan.
 
 ### Through REST
 
@@ -359,83 +249,178 @@ curl -X POST https://<service>.onrender.com/index-repo \
   -d '{"repoUrl":"https://github.com/owner/private-repo","tenantId":"default"}'
 ```
 
-`X-GitHub-Token` is used only for that clone and is never persisted or logged. For a
-single-tenant deployment you can instead set the server-side `GITHUB_TOKEN` environment
-variable, which also covers the MCP `index` tool.
+`X-GitHub-Token` is used only for that clone and is not persisted. For a single-tenant deployment, set `GITHUB_TOKEN` on the server so the MCP `index` tool can clone private repositories.
 
-Allowed clone hosts default to `github.com,gitlab.com,bitbucket.org`. Change
-`HIVE_ALLOWED_HOSTS` (comma-separated) if you use another public Git host. The URL must
-be `https://`.
+Allowed hosts default to `github.com`, `gitlab.com`, and `bitbucket.org`. Change `HIVE_ALLOWED_HOSTS` with a comma-separated list. Only `https://` URLs are accepted.
+
+### Index limits
+
+| Limit | Default | Variable |
+|---|---|---|
+| Files per pass | 5000 | `HIVE_MAX_FILES` |
+| Bytes per file before stubbing | 2,000,000 | `HIVE_MAX_FILE_BYTES` |
+| Clone timeout | 180 seconds | `HIVE_GIT_TIMEOUT_MS` |
+| Cached tenant databases | 50 | `HIVE_MAX_TENANTS` |
 
 ---
 
-## 5. Environment variables
+## 7. Environment variables
 
 | Variable | Default | Applies to | Meaning |
 |---|---|---|---|
-| `PORT` | `3000` | hosted | HTTP listen port. |
-| `HIVE_API_KEY` | empty | hosted | If set, requires `Authorization: Bearer <key>` on `/mcp`, `/sse`, `/messages`, `/index-repo`. |
-| `HIVE_DATA_ROOT` | current directory | hosted | Parent directory for `.hive/tenants`, `.hive/workspaces`, `.hive/repos`, `.hive/overviews`. |
-| `MODEL_CACHE_DIR` | framework default | both | Cache directory for the ONNX embedding model when embeddings are enabled. |
-| `HIVE_TENANT_ID` | `default` | stdio | Tenant namespace and default database name. |
-| `HIVE_REPO_ROOT` | current directory | stdio | Default repository to index. |
-| `HIVE_DB_PATH` | `<repo>/.hive/tenants/<tenant>.db` | stdio | Explicit SQLite path. |
-| `HIVE_EMBEDDINGS` | `auto` | both | `off` disables local ONNX embeddings and uses lexical fallback. |
-| `HIVE_MAX_FILES` | `5000` | both | Maximum files walked per index pass. |
-| `HIVE_MAX_FILE_BYTES` | `2000000` | both | Files above this become metadata stubs. |
-| `HIVE_MAX_TENANTS` | `50` | hosted | Maximum cached tenant databases per process. |
-| `HIVE_RATE_LIMIT` | `120` | hosted | Requests per minute per IP. |
-| `HIVE_CORS_ORIGIN` | `*` | hosted | CORS allow-origin. |
-| `HIVE_ALLOWED_HOSTS` | `github.com,gitlab.com,bitbucket.org` | hosted | Allowed clone hosts. |
-| `HIVE_GIT_TIMEOUT_MS` | `180000` | hosted | Git clone timeout. |
-| `HIVE_ALLOW_QUERY_KEY` | `false` | hosted | Allow `?apiKey=` for clients that cannot send headers (leaks into logs; avoid). |
-| `GITHUB_TOKEN` | empty | both | Server-side token for private clones. |
+| `PORT` | `3000` | hosted | HTTP listen port |
+| `HIVE_API_KEY` | empty | hosted | Bearer token for protected endpoints; empty disables auth |
+| `HIVE_ALLOW_QUERY_KEY` | `false` | hosted | Allow `?apiKey=` for clients without header support |
+| `HIVE_DATA_ROOT` | current directory | hosted | Parent for tenant databases, workspaces, clones, and overviews |
+| `HIVE_CORS_ORIGIN` | `*` | hosted | CORS allow-origin |
+| `HIVE_RATE_LIMIT` | `120` | hosted | Requests per minute per IP |
+| `HIVE_MAX_TENANTS` | `50` | hosted | Maximum cached tenant databases per process |
+| `HIVE_ALLOWED_HOSTS` | `github.com,gitlab.com,bitbucket.org` | hosted | Allowed Git clone hosts |
+| `HIVE_GIT_TIMEOUT_MS` | `180000` | hosted | Git clone timeout |
+| `HIVE_MAX_FILES` | `5000` | both | Maximum files walked per index pass |
+| `HIVE_MAX_FILE_BYTES` | `2000000` | both | Files above this become metadata stubs |
+| `HIVE_EMBEDDINGS` | `auto` | both | `off` disables local ONNX embeddings |
+| `MODEL_CACHE_DIR` | framework default | both | ONNX model cache directory |
+| `GITHUB_TOKEN` | empty | both | Server-side token for private clones |
+| `HIVE_REPO_ROOT` | current directory | stdio | Default repository to index |
+| `HIVE_DB_PATH` | `<repo>/.hive/tenants/<tenant>.db` | stdio | Explicit SQLite path |
+| `HIVE_TENANT_ID` | `default` | stdio | Tenant namespace and database name |
 
-See [`.env.example`](../.env.example). Never commit `.env`.
-
----
-
-## 6. Persistence
-
-The gateway writes three things under `HIVE_DATA_ROOT`:
-
-```text
-.hive/
-├── tenants/<tenant>.db      # SQLite WAL graph, receipts, memory, signals
-├── workspaces/<tenant>/     # per-tenant working directory
-└── repos/<hash>/            # shallow Git clones
-```
-
-Mount `.hive` on a persistent volume. On Render's free plan there is no persistent disk,
-so every restart starts with an empty graph; re-index after a restart. If you need
-durable hosted memory, attach a disk and set `HIVE_DATA_ROOT` to the disk's parent
-directory.
-
-SQLite is opened in WAL mode. Back up a tenant by copying its `.db` plus `-wal`/`-shm`
-while the process is stopped, or use `sqlite3 .backup`.
+Never commit `.env` files or API keys.
 
 ---
 
-## 7. Troubleshooting
+## 8. HTTP surface
 
-| Symptom | Cause / fix |
-|---|---|
-| `401 Unauthorized` | `HIVE_API_KEY` is set but the client is not sending `Authorization: Bearer <key>`. |
-| `404 Session not found or expired` on `/messages` | Legacy SSE session died (server restart or idle). Reconnect the SSE client. Prefer `/mcp`. |
-| `429 Tenant limit reached` | Too many distinct tenant ids. Reuse an id or raise `HIVE_MAX_TENANTS`. |
-| Clone fails with auth error | Private repo: send `X-GitHub-Token` on `/index-repo` or set `GITHUB_TOKEN`. |
-| Clone fails with host not allowed | Add the host to `HIVE_ALLOWED_HOSTS`. Only `https://` URLs are accepted. |
-| Claude connector cannot connect | Remote connectors call from Anthropic's cloud; the URL must be public HTTPS. Use stdio for a localhost-only setup. |
-| Cursor says server unavailable | Check `GET /health`, the URL ends in `/mcp` (not `/sse`) for Streamable HTTP, and the header name/value are exact. |
-| First request times out on Render free | Cold start. Retry; the instance is waking. |
-| Embedding model download is slow / OOM | Set `HIVE_EMBEDDINGS=off`. Lexical + graph ranking remains active. |
-| `docker: healthcheck` failing | The image runs as user `node`; ensure any bind-mounted `.hive` is writable by uid 1000. |
-| Indexing stops at 5000 files | Raise `HIVE_MAX_FILES` or index a subdirectory. |
+| Route | Method | Auth | Purpose |
+|---|---|---|---|
+| `/` | GET | No | Service document and quickstart |
+| `/health` | GET | No | Liveness, uptime, tenant and session counts |
+| `/graph` | GET | No | Static graph UI shell; prompts for the key |
+| `/mcp` | POST | Yes | Streamable HTTP MCP endpoint |
+| `/sse` | GET | Yes | Legacy SSE stream |
+| `/messages` | POST | Yes | Legacy SSE message channel |
+| `/graph.json` | GET | Yes | Graph nodes, links, and statistics |
+| `/graph/node` | GET | Yes | Node detail with `L0`, `L1`, `L2`, links, and tokens |
+| `/graph/context-pack` | POST | Yes | Server-side context bundle |
+| `/graph-overview` | GET | Yes | Markdown graph overview |
+| `/chat-start` | GET | Yes | Compact session card |
+| `/index-status` | GET | Yes | Tenant indexing status |
+| `/index-repo` | POST | Yes | Clone and index a Git URL |
 
-Verify a deployment end to end:
+`GET /mcp` returns `405` by design; the endpoint is stateless JSON over POST.
+
+---
+
+## 9. Operations
+
+### Health and readiness
 
 ```bash
 curl -s https://<service>.onrender.com/health
 curl -s -o /dev/null -w "%{http_code}\n" https://<service>.onrender.com/mcp
-# 401 is expected when auth is on and no token was sent; 405 means the endpoint is alive.
 ```
+
+A `401` on `/mcp` without credentials is expected when auth is enabled. A `405` confirms the endpoint is reachable.
+
+### Logs
+
+The process logs startup, SSE connect and disconnect events, transport failures, and HTTP route errors. It does not emit per-tool audit records.
+
+### Scaling
+
+- One process per SQLite data directory.
+- Do not run multiple replicas against the same mounted disk.
+- For higher concurrency, deploy one instance per trust boundary and use separate data roots.
+
+### Upgrades
+
+1. Deploy the new image.
+2. Check `/health`.
+3. Re-index tenants if the schema or index format changed.
+4. Re-apply pins after a Git re-index.
+
+---
+
+## 10. Local stdio server
+
+Stdio is an offline development and single-user mode. It does not serve HTTP.
+
+```bash
+npm ci
+npm run build
+node packages/mcp/dist/main.js --repo /absolute/path/to/project
+```
+
+Options:
+
+```text
+-r, --repo <path>     Repository to index (default: cwd or HIVE_REPO_ROOT)
+    --db <path>       SQLite path (default: <repo>/.hive/tenants/<tenant>.db)
+    --tenant <id>     Tenant namespace (default: default)
+    --no-embeddings   Lexical-only mode; no ONNX model download
+-h, --help            Show help
+```
+
+Use `dist/main.js`, not `dist/index.js`. `index.js` is the library entry point and does not start a transport.
+
+Claude Desktop stdio configuration:
+
+```json
+{
+  "mcpServers": {
+    "hivemind": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/Hive/packages/mcp/dist/main.js",
+        "--repo",
+        "/absolute/path/to/project"
+      ],
+      "env": {
+        "HIVE_EMBEDDINGS": "off"
+      }
+    }
+  }
+}
+```
+
+---
+
+## 11. Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `401 Unauthorized` | Missing or wrong bearer token. Send `Authorization: Bearer <HIVE_API_KEY>`. |
+| `429` response | Per-IP rate limit reached. Wait for the window or raise `HIVE_RATE_LIMIT`. |
+| `429 Tenant limit reached` | Too many tenant IDs in one process. Reuse an ID or raise `HIVE_MAX_TENANTS`. |
+| `Repository host is not allowed` | Add the host to `HIVE_ALLOWED_HOSTS`. Only `https://` URLs are accepted. |
+| `git clone failed` | Private repository: send `X-GitHub-Token` or set `GITHUB_TOKEN`. Check the clone timeout. |
+| Index stops at the file cap | Raise `HIVE_MAX_FILES` or index a subdirectory. |
+| First request after idle times out | Render cold start. Retry once. |
+| Graph asks for an API key | Expected when auth is enabled. Paste the key; it is kept in `sessionStorage` for the tab. |
+| Data disappeared after restart | Free-tier disk is ephemeral. Attach a persistent disk and set `HIVE_DATA_ROOT`. |
+| Pins disappeared after re-index | A Git re-index recreates the workspace. Re-apply pins. |
+| `404 Session not found or expired` on `/messages` | The SSE session died on restart or idle timeout. Reconnect or use `/mcp`. |
+| `405` on `GET /mcp` | Expected. Use `POST /mcp`. |
+| Platform health check fails | The mounted data directory must be writable by UID 1000. |
+
+---
+
+## 12. Verification
+
+```bash
+# Repository checks
+npm ci
+npm run build
+npm run typecheck
+npm test
+npm run test:e2e
+
+# Live-link checks, including all 14 tools and every REST surface
+BASE_URL=https://<service>.onrender.com \
+API_KEY=<HIVE_API_KEY> \
+REPO_URL=https://github.com/vercel/ms \
+node scripts/verify-hosted-tools.mjs
+```
+
+A successful live run ends with `21/21 checks passed`.

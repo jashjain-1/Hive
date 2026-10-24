@@ -1,130 +1,145 @@
-# START HERE: Hivemind Context MCP Backend
+# Start Here
 
-Welcome to the **Hivemind Context Engine** repository.
+Hivemind Context Engine is a Model Context Protocol server that indexes repositories into a hierarchical graph and returns task-aware, token-budgeted context packs. It ships with a hosted HTTP gateway, a browser graph UI, and a stdio server for offline work.
 
-This project is a token-lean Model Context Protocol (MCP) server that equips AI coding agents with hierarchical context trees, sub-file Abstract Syntax Tree (AST) chunking, task-aware file/chunk prioritization, explainable context selection, universal document ingestion, and persistent graph caching.
-
----
-
-## 1. Project Summary
-
-* **Objective**: Maximize useful work per token; prevent agents from wasting context windows on whole-file dumps and speculative grepping.
-* **Protocol**: Model Context Protocol (MCP) over **Streamable HTTP** (`POST /mcp`) and legacy **SSE** (`/sse`) for remote hosting, plus **stdio** for local execution.
-* **Storage**: Isolated SQLite database in Write-Ahead Logging (WAL) mode per tenant (`.hive/tenants/<tenantId>.db`) for zero cross-tenant leakage.
-* **Intelligence**: WebAssembly Tree-sitter AST chunker + local ONNX embeddings (`@xenova/transformers`, `bge-small-en-v1.5`, zero external API calls) + SQLite FTS5 lexical ranking.
-* **Scope**: **100% Backend Engine**. No frontend/UI overhead.
-* **Scale**: Bounded and configurable — `HIVE_MAX_FILES` / `HIVE_MAX_FILE_BYTES` cap each pass, files stream sequentially, and large binaries become metadata stubs instead of tokenized text.
-* **Full-Board Project Scale**: Handles multi-tier polyglot codebases (backend APIs, desktop GUIs, ML inference pipelines, database migrations, and coordination markdown files) with deep-ignoring of `.venv`, media folders, and heavy binary model stubbing.
-* **Security**: Ephemeral GitHub tokens held strictly in volatile RAM, in-flight secrets redaction, rate limiting, and Helmet security headers.
+This page is the contributor entry point. Product and operator documentation is linked at the bottom.
 
 ---
 
-## 2. Multi-Format Support and Associative Navigation
+## 1. What is in this repository
+
+| Package | Responsibility |
+|---|---|
+| `packages/types` | Shared TypeScript contracts and constants |
+| `packages/core` | SQLite storage, AST and document chunking, graph export, ignore rules, redaction |
+| `packages/pack` | Ranking, optional embeddings, knapsack compilation, next-hop prediction, overrides, ROI |
+| `packages/mcp` | MCP server, 14 tools, indexer, hosted gateway, graph UI |
+
+Supporting files:
+
+```text
+Dockerfile                  Multi-stage production image
+render.yaml                 Render cloud blueprint
+scripts/e2e-smoke.mjs       End-to-end integration suite
+scripts/verify-hosted-tools.mjs  Live-link verifier for all tools and REST surfaces
+docs/                       Deployment, usage, and zero-install guides
+```
+
+---
+
+## 2. Development workflow
 
 ```mermaid
 flowchart LR
-    subgraph Formats["Supported File Formats"]
-        SourceCode["Source Code (.ts, .py, etc.)"]
-        PDF["PDF Documents (.pdf)"]
-        PPTX["PowerPoint Slides (.pptx)"]
-        DOCX["Word Documents (.docx)"]
-        XLSX["Spreadsheets (.xlsx, .csv)"]
-    end
-
-    subgraph Chunker["Universal Chunking Engine"]
-        SourceCode --> ASTNodes["Functions, Classes, Methods"]
-        PDF --> PDFNodes["Sections, Pages"]
-        PPTX --> PPTXNodes["Slides, Bullet Points, Notes"]
-        DOCX --> DOCXNodes["Headings, Paragraphs"]
-        XLSX --> XLSXNodes["Sheets, Column Schemas"]
-    end
-
-    subgraph CognitiveGraph["Cross-Modal Associative Graph"]
-        ASTNodes <-->|mentions / implements| PPTXNodes
-        ASTNodes <-->|specifies / documents| DOCXNodes
-        ASTNodes <-->|validates schema| XLSXNodes
-    end
+  A["Clone repository"] --> B["npm ci"]
+  B --> C["npm run build"]
+  C --> D["npm run typecheck"]
+  D --> E["npm test"]
+  E --> F["npm run test:e2e"]
+  F --> G["Run gateway or stdio server"]
 ```
 
-Rather than forcing AI agents to guess file paths, Hivemind computes associative next-hop reading paths based on cognitive relation weights:
+### Prerequisites
 
-$$w_{\text{specifies}} = 0.95, \quad w_{\text{implements}} = 0.92, \quad w_{\text{calls}} = 0.88, \quad w_{\text{tests}} = 0.80, \quad w_{\text{mentions}} = 0.75$$
+- Node.js 20 or newer
+- npm 10 or newer
+- Git on `PATH`
 
-Every response includes a 3-line pointer footer ($\approx 40$ tokens) indicating the next logical files to inspect, paired with the dedicated `next(node, task)` tool.
-
----
-
-## 3. Toolchain Prerequisites
-
-Ensure the following runtimes are installed:
-* **Node.js**: `v20.x` or higher (`node -v`)
-* **Package Manager**: `npm` (v10+) or `pnpm` (`npm -v` / `pnpm -v`)
-* **Git**: Installed and configured (`git --version`)
-* **Operating System**: Windows, Linux, or macOS (all native extensions use pre-built binaries or WASM to eliminate native C++ compiler requirements).
-
----
-
-## 4. Monorepo Architecture and Package Ownership
-
-```
-Hive/
-├── packages/
-│   ├── types/          # SHARED: Master TypeScript contracts and DTOs
-│   ├── core/           # KOMAL: Storage (SQLite WAL), Tree-sitter AST, Document Chunker, Git Impact
-│   ├── pack/           # ANJALI: Ranker, Local Embeddings, Knapsack Compiler, Next-Hop, ROI Ledger
-│   └── mcp/            # JASH: MCP Server (stdio + Streamable HTTP + SSE), 14 Tools, Cloud Gateway
-├── .hive/
-│   ├── overrides.json  # Context pins (force_include / force_exclude)
-│   ├── tenants/        # Multi-tenant isolated databases (git-ignored)
-│   └── sessions/       # Shared AI session logs (tracked with every push)
-├── Dockerfile          # Production hardened multi-stage container
-├── render.yaml         # Free Render deployment blueprint
-└── scripts/
-    ├── ai-session-logger.js    # Pre-push git validation hook
-    └── e2e-smoke.mjs   # Real end-to-end integration run (11 checks)
-```
-
-Documentation:
-
-* [README.md](README.md) — architecture, formulations, and invariants.
-* [docs/HOSTING.md](docs/HOSTING.md) — stdio, Docker, Render, client configs, troubleshooting.
-* [docs/MCP_USAGE.md](docs/MCP_USAGE.md) — the agent workflow for all 14 tools.
-
-### Team Responsibilities and AI Directives
-* **Jash (Project Lead / MCP Protocol and Cloud)**:
-  * Owns `packages/mcp`, `packages/types`, Docker, Render deployment, and `scripts/`.
-  * Directive: `docs/prompts/jash.md`
-* **Anjali (Context and Intelligence Specialist)**:
-  * Owns `packages/pack`.
-  * Directive: `docs/prompts/anjali.md`
-* **Komal (Data Engine and AST Specialist)**:
-  * Owns `packages/core`.
-  * Directive: `docs/prompts/komal.md`
-* **Synthesis Integrator (Release Engineer)**:
-  * Directive: `docs/prompts/final-merge.md`
-
----
-
-## 5. Development and Testing Commands
+### Commands
 
 ```bash
-# 1. Install dependencies exactly as locked
+# Install exactly what the lockfile specifies
 npm ci
 
-# 2. Build all packages
+# Build all four packages in dependency order
 npm run build
 
-# 3. Run individual package test suites
-npm test -w @hivemind/core    # Tested by Komal
-npm test -w @hivemind/pack    # Tested by Anjali
-npm test -w @hivemind/mcp     # Tested by Jash
+# Typecheck the workspace
+npm run typecheck
 
-# 4. Run the real end-to-end integration suite (11 checks)
+# Unit and MCP protocol tests
+npm test
+
+# Real end-to-end run: indexing, memory tools, stdio, hosted gateway
 npm run test:e2e
+```
 
-# 5. Start the hosted gateway locally (Streamable HTTP + legacy SSE)
-npm run start:sse -w @hivemind/mcp
+Current verification on `main`: build and typecheck pass, 60 unit and protocol tests pass, 11 end-to-end checks pass, and the hosted-link verifier passes 21 checks against a live server.
 
-# 6. Explore the tools interactively
+---
+
+## 3. Run the server locally
+
+The local gateway is for development and verification. Production hosting is documented in [docs/HOSTING.md](docs/HOSTING.md).
+
+```bash
+HIVE_API_KEY=dev-key \
+HIVE_EMBEDDINGS=off \
+HIVE_DATA_ROOT=./.hive-dev \
+PORT=3000 \
+npm run start:sse
+```
+
+Endpoints:
+
+- `http://localhost:3000/mcp?tenantId=default`
+- `http://localhost:3000/sse?tenantId=default`
+- `http://localhost:3000/graph?tenantId=default`
+- `http://localhost:3000/health`
+
+Run the stdio server against a repository:
+
+```bash
+node packages/mcp/dist/main.js --repo /absolute/path/to/project --no-embeddings
+```
+
+Open the MCP Inspector against the stdio server:
+
+```bash
 npm run inspector
 ```
+
+---
+
+## 4. Repository map
+
+```text
+packages/
+  types/src/index.ts          Contracts, constants, DTOs
+  core/src/db.ts              SQLite schema, WAL setup, CAS helpers
+  core/src/ast/chunker.ts     Tree-sitter chunking for TS, TSX, JS, JSX, Python
+  core/src/docs/              PDF, PPTX, DOCX, XLSX, CSV, Markdown ingestion
+  core/src/links/             Cross-modal document-to-code linking
+  core/src/git/               Working-tree impact analysis
+  core/src/security/          Secret redaction
+  pack/src/ranker.ts          Intent classification and composite scoring
+  pack/src/knapsack.ts        Bi-level clustered budget compiler
+  pack/src/next-hop.ts        Associative navigation
+  mcp/src/tools.ts            Tool schemas and dispatch
+  mcp/src/context-service.ts  Pack, search, memory, coordination
+  mcp/src/indexer.ts          Local and Git repository indexing
+  mcp/src/sse-server.ts       Hosted gateway and REST surfaces
+  mcp/src/ui/graph.html       Interactive graph UI
+```
+
+---
+
+## 5. Documentation
+
+| Document | Purpose |
+|---|---|
+| [README.md](README.md) | Product overview, architecture, tool catalog, deployment |
+| [docs/PLUG-AND-PLAY.md](docs/PLUG-AND-PLAY.md) | Zero-install cloud deployment and manual invocation of every tool |
+| [docs/HOSTING.md](docs/HOSTING.md) | Render, Docker, persistence, environment variables, troubleshooting |
+| [docs/MCP_USAGE.md](docs/MCP_USAGE.md) | Agent workflow, budgets, ranking semantics, failure modes |
+| [SECURITY.md](SECURITY.md) | Security model, controls, limitations, disclosure |
+
+---
+
+## 6. Contribution rules
+
+- Run `npm run build`, `npm run typecheck`, `npm test`, and `npm run test:e2e` before opening a pull request.
+- Keep the tool surface at 14 tools unless the change includes schemas, tests, and documentation.
+- Do not commit `.env`, tenant databases, cloned repositories, or generated graph exports.
+- Treat indexed repository content as untrusted data in tests and examples.
+- Keep documentation aligned with the implemented behavior, including known limitations.

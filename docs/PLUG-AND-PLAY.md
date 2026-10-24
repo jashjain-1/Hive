@@ -8,20 +8,49 @@ This is the zero-install, cloud-only path. The server runs on a cloud host (Rend
 
 All three share the same database, tools, and tenant namespace.
 
+```mermaid
+flowchart LR
+  U["Claude, ChatGPT, Cursor, VS Code, curl"] --> MCP["POST /mcp or GET /sse"]
+  B["Browser"] --> UI["GET /graph"]
+  MCP --> AUTH["Bearer or URL key"]
+  UI --> DATA["Authenticated JSON endpoints"]
+  AUTH --> SVC["Context service"]
+  DATA --> SVC
+  SVC --> DB[("SQLite per tenant")]
+  SVC --> WS["Workspaces and Git clones"]
+  SVC --> OV["Overrides and overviews"]
+```
+
 ---
 
 ## 1. Deploy once (5 minutes)
 
-### Option A — Render blueprint (recommended, fully managed cloud)
+### Option A: Render blueprint (recommended, fully managed cloud)
 
-1. Open `https://render.com/deploy?repo=https://github.com/jashjain-1/Hive` (or Render → **New → Blueprint** and pick the repo).
+1. Open `https://render.com/deploy?repo=https://github.com/jashjain-1/Hive` (or Render > **New > Blueprint** and pick the repo).
 2. Apply `render.yaml`. It builds the Dockerfile in Render's cloud, sets a health check on `/health`, generates `HIVE_API_KEY`, and enables the query-key fallback for connectors that cannot send headers.
 3. Wait for the build, then open **Environment** and copy `HIVE_API_KEY`.
 4. Check `https://<service>.onrender.com/health` returns `{"status":"healthy",...}`.
 
 Render hosts the process, database, and clones. Nothing is served from your machine. The blueprint uses the free plan: 512 MB RAM, `HIVE_EMBEDDINGS=off`, 3000-file index cap, and an ephemeral disk. Every tool works; state resets when the instance sleeps or redeploys. For durable state, attach a Render Disk, set `HIVE_DATA_ROOT` to the mount path, and keep exactly one instance (SQLite is per process).
 
-### Option B — Docker on any cloud VM
+```mermaid
+sequenceDiagram
+  participant A as AI client
+  participant G as MCP gateway
+  participant S as Context service
+  participant D as SQLite
+  A->>G: POST /mcp tools/call pack
+  G->>G: Verify token and rate limit
+  G->>S: pack(task, budget)
+  S->>D: Load candidates, links, overrides
+  D-->>S: Nodes and graph
+  S->>S: Rank, knapsack, MMR, redact
+  S-->>G: HIVE_PACK receipt
+  G-->>A: result.content text
+```
+
+### Option B: Docker on any cloud VM
 
 ```bash
 docker build -t hivemind-mcp .
@@ -33,7 +62,7 @@ docker run -d --name hivemind -p 3000:3000 \
   hivemind-mcp
 ```
 
-Run this on Fly.io, Railway, a cloud VM, or any container host — not on a laptop that users depend on. Put TLS in front and disable proxy buffering on `/mcp` and `/sse`.
+Run this on Fly.io, Railway, a cloud VM, or any container host, not on a laptop that users depend on. Put TLS in front and disable proxy buffering on `/mcp` and `/sse`.
 
 ---
 
@@ -41,9 +70,9 @@ Run this on Fly.io, Railway, a cloud VM, or any container host — not on a lapt
 
 ### Claude (web/Desktop custom connector)
 
-1. **Customize → Connectors → Add custom connector**.
+1. **Customize > Connectors > Add custom connector**.
 2. Authentication: **No sign-in**.
-3. URL (works for every org): `https://<service>/mcp?tenantId=default&apiKey=<HIVE_API_KEY>`.
+3. URL (works without the fixed-header beta): `https://<service>/mcp?tenantId=default&apiKey=<HIVE_API_KEY>`. The blueprint sets `HIVE_ALLOW_QUERY_KEY=true`; set it on any other host.
 4. If your organization has access to fixed request headers (beta), prefer the cleaner form instead: URL `https://<service>/mcp?tenantId=default` plus header `Authorization: Bearer <HIVE_API_KEY>`.
 5. Enable the connector in a conversation and ask it to call `status`.
 
@@ -171,8 +200,8 @@ curl -s "$HIVE/mcp?tenantId=$TENANT" -H "Authorization: Bearer $KEY" \
 | 10 | `pin` | `{"target":"**/generated/**","action":"exclude"}` | `include` / `exclude` / `clear` a path, glob, or symbol. Persists in the workspace overrides file. |
 | 11 | `write` | `{"parent":"root","kind":"decision","name":"Token rotation","content":"..."}` | Create `note`, `fact`, `decision`, or `tombstone` memory. Memory is searchable and packable. |
 | 12 | `task` | `{"verb":"claim","id":"AUTH-42","payload":"investigating"}` | `claim` / `report` / `handoff` coordination rows (last writer wins). |
-| 13 | `signal` | `{"channel":"auth","message":"freeze token cache"}` | Append-only blackboard message, capped at 100 tokens. Returns the 5 most recent. |
-| 14 | `branch` | `{"verb":"fork","id":"experiment-1"}` | `fork` / `diff` / `merge` / `discard` a lightweight memory overlay. |
+| 13 | `signal` | `{"channel":"auth","message":"freeze token cache"}` | Append-only blackboard message, capped at 400 characters. Returns the 5 most recent. |
+| 14 | `branch` | `{"verb":"fork","id":"experiment-1"}` | `fork` / `diff` / `merge` / `discard` a named branch record. Branches are coordination labels and do not isolate writes in this release. |
 
 Copy-paste examples for the ones with the most knobs:
 
@@ -255,7 +284,13 @@ curl -s -X POST "$HIVE/index-repo?tenantId=$TENANT" \
 
 ## 6. Prove the deployment
 
-One command exercises all 14 tools and every REST endpoint against the live link. It needs Node 20+ on the operator's machine only — not on the user's.
+One command exercises all 14 tools and every REST endpoint against the live link. It needs Node 20+ on the operator's machine only, not on the user's. The same suite is what the repository itself reports: 60 unit and protocol tests, 11 end-to-end checks, and 21 live-link checks.
+
+A pack respects a 10% reserve, so the usable budget for $\mathcal{B}$ input tokens is:
+
+$$
+\mathcal{B}_{\text{effective}} = \mathcal{B}(1-\sigma), \qquad \sigma = 0.10
+$$
 
 ```bash
 BASE_URL=https://<service>.onrender.com \
@@ -266,7 +301,7 @@ node scripts/verify-hosted-tools.mjs
 
 Expected tail: `[verify] 21/21 checks passed`.
 
-Symptom → cause:
+Symptom > cause:
 
 | Symptom | Fix |
 |---|---|
@@ -286,8 +321,10 @@ Symptom → cause:
 - All 14 tools are available identically over `/mcp` and `/sse`; stdio remains an optional offline mode, not a requirement.
 - Indexing, search, packing, explainability, next-hop navigation, impact analysis, pins, memory writes, tasks, signals, and branches are verified through the cloud link (`scripts/verify-hosted-tools.mjs`).
 - The graph UI, overview, chat-start card, status, and context-pack endpoints are verified the same way.
-- Hosted indexing requires a Git URL because the cloud server cannot read a user's local disk. That is the only interaction that differs from stdio; `index` with a local path is intentionally rejected on the gateway.
+- Hosted indexing requires a Git URL because the cloud server cannot read a user's local disk. Local paths work only in stdio; `index` with a local path is intentionally rejected on the gateway.
+- Two secondary differences follow from the cloud model: `impact` needs an explicit `target` because there is no working-tree diff, and pins live in the indexed workspace, so a Git re-index clears them.
 - Free-tier disks are ephemeral. Attach a persistent disk for state that must survive restarts; this is a hosting-plan property, not a code path that needs your PC.
+- The API key authenticates the whole deployment. Tenant IDs are namespaces, not per-user credentials; use separate deployments for separate trust boundaries.
 
 ## 8. Auth modes at a glance
 

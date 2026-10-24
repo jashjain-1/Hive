@@ -406,7 +406,7 @@ Any client implementing the [Model Context Protocol](https://modelcontextprotoco
 | Claude Desktop | `claude_desktop_config.json` | `/mcp?tenantId=default` |
 | Cursor IDE | `.cursor/mcp.json` | `/mcp?tenantId=default` |
 | Windsurf | `windsurf/config/mcp.json` | `/sse?tenantId=default` |
-| Antigravity | `antigravity.json` | `/sse?tenantId=default` |
+| Antigravity | `.agents/mcp_config.json` | `/sse?tenantId=default` (legacy) or `/mcp?tenantId=default` (Streamable HTTP, recommended) |
 | Copilot Chat | `copilot-config.json` | `/sse?tenantId=default` |
 | ChatGPT (MCP) | connector URL | `/mcp?tenantId=default` |
 | Cline / continue.dev | `mcp.json` | `/sse?tenantId=default` |
