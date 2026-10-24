@@ -110,7 +110,7 @@ export class HiveContextService {
     this.ensureServiceTables();
 
     this.embeddings = new LocalEmbeddingEngine();
-    this.ranker = new RelevanceRanker(this.embeddings);
+    this.ranker = new RelevanceRanker(this.embeddings, this.embeddingsEnabled);
     this.overrides = new OverridesManager(this.repoRoot);
     this.packer = new KnapsackPacker(this.embeddings, this.overrides, this.ranker);
     this.nextHop = new NextHopPredictor();

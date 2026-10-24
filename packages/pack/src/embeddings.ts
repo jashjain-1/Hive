@@ -12,6 +12,10 @@ export class LocalEmbeddingEngine {
     // lets lexical-only deployments avoid the optional native `sharp` module.
     const { pipeline, env } = await import('@xenova/transformers');
     env.allowLocalModels = true;
+    // Honour an explicit cache dir so container images and Render disks can
+    // persist the ~23 MB quantized model outside the read-only app tree.
+    const modelCacheDir = process.env.MODEL_CACHE_DIR?.trim();
+    if (modelCacheDir) env.cacheDir = modelCacheDir;
 
     this.extractor = await pipeline('feature-extraction', this.modelName, {
       quantized: true, // 100% offline WASM ONNX execution

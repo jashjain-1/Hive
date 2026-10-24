@@ -3,6 +3,8 @@
 **Token-Lean Hierarchical Context Trees and Associative Memory Engine for AI Coding Agents**  
 *Model Context Protocol (MCP) Server for Claude Desktop, Cursor, Windsurf, and Antigravity*
 
+> **Zero-install cloud path:** deploy once with the Render blueprint, then use one MCP URL from every client. No server runs on your PC. Start here: [docs/PLUG-AND-PLAY.md](docs/PLUG-AND-PLAY.md).
+
 ---
 
 ## Table of Contents
@@ -22,13 +24,15 @@
 - [6. Human-Mind Associative Next-Hop Navigation](#6-human-mind-associative-next-hop-navigation)
 - [7. In-Flight Secrets Redaction Interceptor](#7-in-flight-secrets-redaction-interceptor)
 - [8. Empirical Benchmarks](#8-empirical-benchmarks)
-- [9. MCP Tool Catalog (12 Tools)](#9-mcp-tool-catalog-12-tools)
+- [9. MCP Tool Catalog (14 Tools)](#9-mcp-tool-catalog-14-tools)
 - [10. Quickstart and Host Setup](#10-quickstart-and-host-setup)
   - [10.1 Remote Cloud Hosting via Render (Zero Installation)](#101-remote-cloud-hosting-via-render-zero-installation)
   - [10.2 Host Configuration](#102-host-configuration)
   - [10.3 Hosted Dashboard and Visibility Surface](#103-hosted-dashboard-and-visibility-surface)
-  - [10.4 Portable Skill and Discovery Path](#104-portable-skill-and-discovery-path)
-  - [10.5 Free-Tier Persistence and Upgrade Path](#105-free-tier-persistence-and-upgrade-path)
+  - [10.4 Graph Overview and Chat-Start Card](#104-graph-overview-and-chat-start-card-multi-model-proofs)
+  - [10.5 Portable Skill and Discovery Path](#105-portable-skill-and-discovery-path)
+  - [10.6 Free-Tier Persistence and Upgrade Path](#106-free-tier-persistence-and-upgrade-path)
+- [Zero-install cloud guide](docs/PLUG-AND-PLAY.md)
 
 ---
 
@@ -283,15 +287,17 @@ Evaluation performed across SWE-bench coding tasks and multi-module monorepos:
 
 ---
 
-## 9. MCP Tool Catalog (12 Tools)
+## 9. MCP Tool Catalog (14 Tools)
 
-Total upfront schema footprint across all twelve tools is constrained to $< 600$ tokens:
+Total upfront schema footprint across all fourteen tools is constrained to $< 600$ tokens. Every tool in this table is reachable over the same hosted URL; see [docs/PLUG-AND-PLAY.md](docs/PLUG-AND-PLAY.md) for copy-paste invocation of each one.
 
 | Tool | Signature | Function |
 |---|---|---|
+| `index` | `(target)` | Index a public `https://` Git repository URL (hosted) or a local directory (stdio). Run once before search and pack. |
+| `status` | `()` | Tenant id, database path, node/link counts, embedding mode, last indexing result, ROI totals. |
 | `peek` | `(node, depth?, level?)` | Shallow subtree inspection at $L_0/L_1$ using token-lean TSV wire format. |
 | `expand` | `(node, level, range?)` | Deepen chunk content ($L_1$ summary, $L_2$ full chunk, $L_3$ range). |
-| `find` | `(query, budget?)` | Hybrid lexical and vector search returning $L_0$ candidates within budget. |
+| `find` | `(query, budget?)` | Lexical search (FTS5 plus camelCase normalization) returning $L_0$ candidates within budget. |
 | `pack` | `(task, budget?, explain?)` | Compile optimal context bundle within token budget with 10% reserve slack. |
 | `explain` | `(node, task?)` | Detailed 1-line verification explaining why a node was selected or deferred. |
 | `impact` | `(target?)` | Git diff blast-radius impact analysis evaluating modified symbols and callers. |
@@ -300,23 +306,26 @@ Total upfront schema footprint across all twelve tools is constrained to $< 600$
 | `write` | `(parent, kind, name, content)` | Insert or update note, decision, or tombstone with CAS version validation. |
 | `task` | `(verb, id, payload?)` | Multi-agent coordination (`claim`, `report`, `handoff`). |
 | `signal` | `(channel, message)` | Compact inter-agent blackboard messaging ($\le 100$ tokens). |
-| `branch` | `(verb, id?)` | Speculative overlay memory branch operations (`fork`, `diff`, `merge`). |
+| `branch` | `(verb, id?)` | Speculative overlay memory branch operations (`fork`, `diff`, `merge`, `discard`). |
 
 ---
 
 ## 10. Quickstart and Host Setup
 
 ### 10.1 Remote Cloud Hosting via Render (Zero Installation)
-Deploy a live MCP server instance with automated HTTPS TLS.
+Deploy a live MCP server instance with automated HTTPS TLS. No local install is needed for the end user; they only need the URL and API key.
 
-1. Connect repository `https://github.com/jashjain-1/Hive` to [Render.com](https://render.com).
-2. Choose **Web Service** with Environment **Docker** on the Free Tier.
+1. Connect repository `https://github.com/jashjain-1/Hive` to [Render.com](https://render.com) and apply the `render.yaml` blueprint (or use the **Deploy to Render** button: `https://render.com/deploy?repo=https://github.com/jashjain-1/Hive`).
+2. Render generates the `HIVE_API_KEY`. Copy it from the service's **Environment** tab.
 3. Access your live endpoints:
-   - SSE: `https://<app-name>.onrender.com/sse?tenantId=default`
-   - Streamable HTTP: `https://<app-name>.onrender.com/mcp?tenantId=default`
-   - Hosted dashboard: `https://<app-name>.onrender.com/`
+   - Streamable HTTP (recommended): `https://<app-name>.onrender.com/mcp?tenantId=default`
+   - Legacy SSE: `https://<app-name>.onrender.com/sse?tenantId=default`
+   - Hosted graph UI: `https://<app-name>.onrender.com/graph?tenantId=default`
+   - Health: `https://<app-name>.onrender.com/health`
 
-> **Free-tier persistence caveat**: Render's free web services are [ephemeral](https://render.com/docs/free#ephemeral-filesystem) — the filesystem (including `.hive/tenants/*.db` and the ONNX model cache at `~/.cache/huggingface`) does not survive container sleeps. After a cold start the first `/index-repo` is the slowest (~10–40s) because the `bge-small-en-v1.5` embedding model is downloaded on demand. Subsequent invocations within the same warm container are fast. This is acceptable for demo/alpha use. Production tenants should attach a [Render Disk](https://render.com/docs/disk) (paid) and set `MODEL_CACHE_DIR` to a volume path, or provision an external D1/R2 store via the Sites tooling.
+Full zero-install walkthrough, including per-tool curl calls and a one-command verifier: [docs/PLUG-AND-PLAY.md](docs/PLUG-AND-PLAY.md).
+
+> **Free-tier persistence note**: Render's free web services are [ephemeral](https://render.com/docs/free#ephemeral-filesystem) — the filesystem (including `.hive/tenants/*.db` and cloned repositories) does not survive container sleeps. The blueprint sets `HIVE_EMBEDDINGS=off` to stay inside 512 MB RAM, so indexing itself does not download a model and lexical + graph ranking run at full speed. After a restart, re-index the repository. For durable multi-session memory, attach a [Render Disk](https://render.com/docs/disk) and set `HIVE_DATA_ROOT` to the mount path.
 
 ### 10.2 Host Configuration
 
@@ -325,7 +334,8 @@ Deploy a live MCP server instance with automated HTTPS TLS.
 {
   "mcpServers": {
     "hivemind": {
-      "url": "https://<app-name>.onrender.com/sse?tenantId=default"
+      "url": "https://<app-name>.onrender.com/mcp?tenantId=default",
+      "headers": { "Authorization": "Bearer <HIVE_API_KEY>" }
     }
   }
 }
@@ -336,7 +346,8 @@ Deploy a live MCP server instance with automated HTTPS TLS.
 {
   "mcpServers": {
     "hivemind": {
-      "url": "https://<app-name>.onrender.com/sse?tenantId=default"
+      "url": "https://<app-name>.onrender.com/mcp?tenantId=default",
+      "headers": { "Authorization": "Bearer <HIVE_API_KEY>" }
     }
   }
 }
@@ -348,7 +359,8 @@ For clients that prefer Streamable HTTP, point them at the same host's `/mcp` en
 {
   "mcpServers": {
     "hivemind": {
-      "url": "https://<app-name>.onrender.com/mcp?tenantId=default"
+      "url": "https://<app-name>.onrender.com/mcp?tenantId=default",
+      "headers": { "Authorization": "Bearer <HIVE_API_KEY>" }
     }
   }
 }
@@ -360,11 +372,18 @@ For clients that prefer Streamable HTTP, point them at the same host's `/mcp` en
   "mcpServers": {
     "hivemind": {
       "command": "node",
-      "args": ["<PATH_TO_HIVE>/packages/mcp/dist/index.js"]
+      "args": [
+        "<PATH_TO_HIVE>/packages/mcp/dist/main.js",
+        "--repo",
+        "<ABSOLUTE_PATH_TO_YOUR_PROJECT>"
+      ],
+      "env": { "HIVE_EMBEDDINGS": "off" }
     }
   }
 }
 ```
+
+Use `dist/main.js` (the stdio entry point), not `dist/index.js` (the library entry point).
 
 #### Copilot Chat (`copilot-config.json` or VS Code settings)
 Copilot supports custom MCP servers via its connector configuration. Point it at the same SSE endpoint:
@@ -372,7 +391,8 @@ Copilot supports custom MCP servers via its connector configuration. Point it at
 {
   "mcpServers": {
     "hivemind": {
-      "url": "https://<app-name>.onrender.com/sse?tenantId=default"
+      "url": "https://<app-name>.onrender.com/sse?tenantId=default",
+      "headers": { "Authorization": "Bearer <HIVE_API_KEY>" }
     }
   }
 }
@@ -383,8 +403,8 @@ Any client implementing the [Model Context Protocol](https://modelcontextprotoco
 
 | Client | Config file | Endpoint |
 |--------|-------------|----------|
-| Claude Desktop | `claude_desktop_config.json` | `/sse?tenantId=default` |
-| Cursor IDE | `.cursor/mcp.json` | `/sse?tenantId=default` |
+| Claude Desktop | `claude_desktop_config.json` | `/mcp?tenantId=default` |
+| Cursor IDE | `.cursor/mcp.json` | `/mcp?tenantId=default` |
 | Windsurf | `windsurf/config/mcp.json` | `/sse?tenantId=default` |
 | Antigravity | `antigravity.json` | `/sse?tenantId=default` |
 | Copilot Chat | `copilot-config.json` | `/sse?tenantId=default` |
@@ -392,23 +412,28 @@ Any client implementing the [Model Context Protocol](https://modelcontextprotoco
 | Cline / continue.dev | `mcp.json` | `/sse?tenantId=default` |
 | Any MCP host | — | `/mcp?tenantId=default` (Streamable HTTP) |
 
+When `HIVE_API_KEY` is set, every endpoint also needs `Authorization: Bearer <key>`. Claude connectors that cannot send fixed headers, and ChatGPT app connectors, can instead use `?apiKey=<key>` in the URL when `HIVE_ALLOW_QUERY_KEY=true` (the Render blueprint enables it). The key then appears in access logs, so prefer header auth where supported. Details: [docs/PLUG-AND-PLAY.md](docs/PLUG-AND-PLAY.md).
+
 All clients share the same backend. One deploy serves every AI model.
 
 ### 10.3 Hosted Dashboard and Visibility Surface
 
-The same backend also serves a lightweight hosted dashboard at `/` for the browser-only persona. It is not a full app; it is the visibility-and-approval surface for users who do not want to configure an AI client just to see status or approve risky actions.
+The same backend also serves a lightweight hosted surface for the browser-only persona, so no AI client is required to inspect or curate a graph.
 
-Today the dashboard exposes:
-- Health and connection state.
-- Indexing status (pollable via `/index-status`).
-- A form to start indexing a repository (`/index-repo`).
-- A visibility/approval surface for risky mutations via `/rbac/v1/propose`, `/rbac/v1/approve`, `/rbac/v1/pending`, `/rbac/v1/records`.
+Today it exposes:
+- `GET /` — service document with endpoint names and quickstart.
+- `GET /health` — liveness and tenant/session counts.
+- `GET /index-status?tenantId=<id>` — node/link counts, ROI, and last indexing result.
+- `POST /index-repo` — clone and index a public Git repository URL.
+- `GET /graph?tenantId=<id>` — interactive graph UI: search, tri-state include/exclude, L0/L1/L2 preview, budget meter, and a pre-flight hand-off card. Data endpoints stay bearer-protected; the page prompts once for the key.
+- `GET /graph-overview` / `GET /chat-start` — Markdown session overview and compact chat-start card.
+- `POST /graph/context-pack` — server-side equivalent of the UI's context bundle.
 
-The primary day-to-day interaction is still through the connected AI client. The dashboard is the secondary surface for status and governance.
+The primary day-to-day interaction is still through the connected AI client. The dashboard is the secondary surface for visibility and manual curation.
 
 ### 10.4 Graph Overview and Chat-Start Card (Multi-Model Proofs)
 
-Every Hivemind MCP server exposes two endpoints designed for AI agents to prove context at the start of a session:
+Every Hivemind MCP server exposes two on-demand Markdown endpoints designed for AI agents to prove context at the start of a session (no caching, always generated from the live database):
 
 - **`GET /graph-overview?tenantId=<id>`** — Returns a full `GRAPH_OVERVIEW.md` document containing:
   - Graph statistics (nodes, links, per-kind and per-tree breakdowns).
@@ -416,7 +441,7 @@ Every Hivemind MCP server exposes two endpoints designed for AI agents to prove 
   - Top 15 most-connected symbols (blast-radius hubs).
   - A Mermaid graph diagram of the code, knowledge, and memory trees with weighted links.
   - Agent navigation hints (top 5 starting points).
-  - Regenerated automatically after every indexing run and every notebook write.
+  - Always reflects the current database; call it again after indexing or memory writes.
 
 - **`GET /chat-start?tenantId=<id>&task=<task>`** — Returns a compact `< 300 token` Markdown card an AI agent pastes at the top of every chat:
   - Total nodes and links indexed.
@@ -441,25 +466,36 @@ The skill should:
 - Include a short fallback note for when no remote server is available.
 - Not imply a full local MCP experience exists when it does not.
 
-### 10.5 Free-Tier Persistence and Upgrade Path
+### 10.6 Free-Tier Persistence and Upgrade Path
 
-Render's free web services are [ephemeral](https://render.com/docs/free#ephemeral-filesystem): the filesystem — including `.hive/tenants/*.db` and the ONNX model cache at `~/.cache/huggingface` — does not survive container sleeps. After a cold start, the first `/index-repo` is the slowest (~10–40s) because the `bge-small-en-v1.5` embedding model is downloaded on demand. Subsequent invocations within the same warm container are fast.
+Render's free web services are [ephemeral](https://render.com/docs/free#ephemeral-filesystem): the filesystem — including `.hive/tenants/*.db` and cloned repositories — does not survive container sleeps or redeploys. After a cold start, re-index the repository; the database starts empty.
 
-This ephemeral behavior is acceptable for demo/alpha use, but it is documented explicitly rather than hidden. If you need durable multi-session hosting, the upgrade paths are:
-- Attach a [Render Disk](https://render.com/docs/disk) (paid) and set `MODEL_CACHE_DIR` to a volume path.
-- Provision an external D1/R2 store via the Sites tooling.
+This ephemeral behavior is acceptable for demo/alpha use, but it is documented explicitly rather than hidden. If you need durable multi-session hosting, attach a [Render Disk](https://render.com/docs/disk) (paid), set `HIVE_DATA_ROOT` to the mount path, and deploy a single instance (SQLite is per-process).
 
 ---
 
 ## 11. Verification and Invariant Testing
 
-Run the end-to-end integration test suite:
+Run the unit and protocol suites:
 
 ```bash
-node scripts/test-e2e-simulation.ts
+npm test
 ```
 
-Current run reports 18/19 invariants passing. The one expected gap is a simulated invariant that depends on a runtime constant not wired into the simulation harness; that is a harness gap, not a product gap.
+Run the real end-to-end suite (local indexing, every memory tool, stdio MCP, and the hosted gateway):
+
+```bash
+npm run test:e2e
+```
+
+Prove a deployed link answers all 14 tools plus the graph endpoints:
+
+```bash
+BASE_URL=https://<app-name>.onrender.com API_KEY=<HIVE_API_KEY> \
+  REPO_URL=https://github.com/vercel/ms node scripts/verify-hosted-tools.mjs
+```
+
+Current run reports 60/60 unit and protocol tests, 11/11 end-to-end checks, and 21/21 hosted-link checks passing.
 
 ---
 

@@ -79,7 +79,7 @@ export function registerHiveTools(server: McpServer, service: HiveContextService
 
   server.tool(
     'find',
-    'Hybrid lexical search over indexed symbols and files within a token budget.',
+    'Lexical (FTS5 + camelCase-normalized) search over indexed symbols and files within a token budget.',
     {
       query: z.string().describe('Symbol, file name, or concept to search for'),
       budget: z.number().min(50).max(HIVE_CONSTANTS.RESP_CAP).default(400)

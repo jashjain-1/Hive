@@ -22,7 +22,10 @@ const GRAPH_HOP2_BONUS = 0.5;
 const ACTIVE_DEVELOPMENT_BOOST = 1.50;
 
 export class RelevanceRanker {
-  constructor(private embeddings: LocalEmbeddingEngine) {}
+  constructor(
+    private embeddings: LocalEmbeddingEngine,
+    private embeddingsEnabled: boolean = true
+  ) {}
 
   /**
    * Classify user task query intent and return optimal weight distribution.
@@ -85,30 +88,47 @@ export class RelevanceRanker {
     const intentAnalysis = this.classifyIntent(taskQuery);
     const { bm25: wBm25, vector: wVec, graph: wGraph } = intentAnalysis.weights;
 
-    const taskVec = await this.embeddings.embed(taskQuery);
     const scored: TaskCandidate[] = [];
 
-    // 1. Resolve vector scores: use external offloaded scores if available,
-    // otherwise use pre-stored node.embedding, falling back to batch embedding for missing nodes
+    // 1. Resolve vector scores. Embeddings are optional: in lexical-only mode we
+    // consume the caller's offloaded scores and never import the ONNX runtime
+    // (which also pulls the native `sharp` module). If the runtime is enabled but
+    // cannot load, degrade to the supplied lexical scores instead of failing the pack.
     const vecScores = new Map<string, number>();
+    let taskVec: Float32Array | null = null;
+    const needsLocalEmbeddings = this.embeddingsEnabled && !externalVecScores;
+
+    if (needsLocalEmbeddings) {
+      try {
+        taskVec = await this.embeddings.embed(taskQuery);
+      } catch {
+        taskVec = null;
+      }
+    }
 
     const missingEmbeddingNodes: NodeRecord[] = [];
     for (const node of candidates) {
       if (externalVecScores && externalVecScores.has(node.id)) {
         vecScores.set(node.id, externalVecScores.get(node.id)!);
-      } else if (node.embedding) {
+      } else if (taskVec && node.embedding) {
         vecScores.set(node.id, this.embeddings.cosineSimilarity(taskVec, node.embedding));
-      } else {
+      } else if (taskVec) {
         missingEmbeddingNodes.push(node);
+      } else {
+        vecScores.set(node.id, 0);
       }
     }
 
-    if (missingEmbeddingNodes.length > 0) {
-      const texts = missingEmbeddingNodes.map(n => n.l0 + ' ' + (n.l1 ?? '') + ' ' + (n.l2 ?? ''));
-      const generatedEmbeddings = await this.embeddings.embedBatch(texts);
-      for (let i = 0; i < missingEmbeddingNodes.length; i++) {
-        const sim = this.embeddings.cosineSimilarity(taskVec, generatedEmbeddings[i]);
-        vecScores.set(missingEmbeddingNodes[i].id, sim);
+    if (taskVec && missingEmbeddingNodes.length > 0) {
+      try {
+        const texts = missingEmbeddingNodes.map(n => n.l0 + ' ' + (n.l1 ?? '') + ' ' + (n.l2 ?? ''));
+        const generatedEmbeddings = await this.embeddings.embedBatch(texts);
+        for (let i = 0; i < missingEmbeddingNodes.length; i++) {
+          const sim = this.embeddings.cosineSimilarity(taskVec, generatedEmbeddings[i]);
+          vecScores.set(missingEmbeddingNodes[i].id, sim);
+        }
+      } catch {
+        for (const node of missingEmbeddingNodes) vecScores.set(node.id, 0);
       }
     }
 

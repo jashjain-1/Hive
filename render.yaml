@@ -12,7 +12,26 @@ services:
         value: 3000
       - key: NODE_ENV
         value: production
+      # Bearer token for /mcp, /sse, /graph.json and /index-repo. Render
+      # generates the value; copy it from the service's Environment tab.
+      - key: HIVE_API_KEY
+        generateValue: true
+      # Claude connectors without request-header access and ChatGPT app
+      # connectors cannot send a bearer header. This lets them authenticate via
+      # ?apiKey=<key> in the connector URL. The key will appear in access logs;
+      # prefer headers (Cursor, VS Code, curl) when available.
+      - key: HIVE_ALLOW_QUERY_KEY
+        value: "true"
+      # Free tier has ~512 MB RAM. Lexical + graph ranking remains fully
+      # functional; set to "auto" on a paid plan with a persistent model cache.
+      - key: HIVE_EMBEDDINGS
+        value: off
+      # Writable root for .hive/tenants, .hive/repos, .hive/overviews.
+      - key: HIVE_DATA_ROOT
+        value: /app
       - key: MODEL_CACHE_DIR
         value: /home/node/.cache/huggingface/hub
-      - key: HIVE_TENANT_DIR
-        value: /app/.hive/tenants
+      - key: HIVE_MAX_FILES
+        value: 3000
+      - key: HIVE_MAX_TENANTS
+        value: 50

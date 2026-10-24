@@ -10,6 +10,7 @@
     "build": "npm run build -w @hivemind/types && npm run build -w @hivemind/core && npm run build -w @hivemind/pack && npm run build -w @hivemind/mcp",
     "test": "npm run build && npm run test --workspaces --if-present",
     "test:e2e": "npm run build && node scripts/e2e-smoke.mjs",
+    "verify:hosted": "node scripts/verify-hosted-tools.mjs",
     "typecheck": "tsc -b packages/types packages/core packages/pack packages/mcp --pretty false",
     "clean": "npm run clean --workspaces --if-present",
     "start": "node packages/mcp/dist/main.js",

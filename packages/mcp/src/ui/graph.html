@@ -535,6 +535,36 @@
   var params = new URLSearchParams(location.search);
   var tenant = params.get('tenantId') || params.get('tenant') || 'default';
 
+  // The JSON endpoints are bearer-protected when HIVE_API_KEY is set, while
+  // /graph itself is a public static shell. Ask once per tab, keep the key in
+  // sessionStorage only, and replay it on every data request.
+  var AUTH_STORAGE_KEY = 'hiveApiKey';
+  function hiveHeaders(extra) {
+    var headers = Object.assign({}, extra || {});
+    try {
+      var key = sessionStorage.getItem(AUTH_STORAGE_KEY);
+      if (key) headers.Authorization = 'Bearer ' + key;
+    } catch (err) { /* storage can be disabled; the prompt still works */ }
+    return headers;
+  }
+  function hiveFetch(url, options) {
+    var opts = options || {};
+    opts.headers = hiveHeaders(opts.headers);
+    return fetch(url, opts).then(function (res) {
+      if (res.status !== 401) {
+        if (!res.ok) throw new Error('request failed: HTTP ' + res.status);
+        return res;
+      }
+      var key = window.prompt('This Hivemind server requires an API key (HIVE_API_KEY). Paste it to load the graph:');
+      if (!key || !key.trim()) throw new Error('HTTP 401: API key required');
+      try { sessionStorage.setItem(AUTH_STORAGE_KEY, key.trim()); } catch (err) { /* ignore */ }
+      return fetch(url, { headers: hiveHeaders(options && options.headers) }).then(function (retry) {
+        if (!retry.ok) throw new Error('request failed: HTTP ' + retry.status);
+        return retry;
+      });
+    });
+  }
+
   var canvas = document.getElementById('canvas');
   var ctx = canvas.getContext('2d', { alpha: false });
   var statusEl = document.getElementById('status');
@@ -1339,8 +1369,8 @@
     panel.classList.add('open');
 
     document.getElementById('p-body').textContent = 'loading…';
-    fetch('/graph/node?tenantId=' + encodeURIComponent(tenant) + '&id=' + encodeURIComponent(n.id))
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    hiveFetch('/graph/node?tenantId=' + encodeURIComponent(tenant) + '&id=' + encodeURIComponent(n.id))
+      .then(function (r) { return r.json(); })
       .then(function (d) {
         detail = d;
         renderExplanation(d);
@@ -1819,11 +1849,8 @@
   // ---------------------------------------------------------------- data load
   function fetchPayload() {
     var url = '/graph.json?tenantId=' + encodeURIComponent(tenant);
-    return fetch(url, { headers: { accept: 'application/json' } })
-      .then(function (r) {
-        if (!r.ok) throw new Error('graph request failed: HTTP ' + r.status);
-        return r.json();
-      });
+    return hiveFetch(url, { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.json(); });
   }
 
   function applyPayload(payload) {

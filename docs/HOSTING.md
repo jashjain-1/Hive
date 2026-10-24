@@ -162,10 +162,11 @@ container restarts. Without a volume, hosted state is ephemeral.
 ### 2.2 Render (one-click blueprint)
 
 `render.yaml` defines a Docker web service with a `/health` check, conservative
-free-tier limits, and a generated `HIVE_API_KEY`.
+free-tier limits, `HIVE_EMBEDDINGS=off`, and a generated `HIVE_API_KEY`.
 
 1. Push this repository to GitHub. The blueprint deploys the `main` branch.
-2. In Render: **New > Blueprint**, select the repository, apply.
+2. Open `https://render.com/deploy?repo=https://github.com/jashjain-1/Hive`, or in
+   Render: **New > Blueprint**, select the repository, apply.
 3. Wait for the first build. `GET https://<service>.onrender.com/health` should return
    `{"status":"healthy", ...}`.
 4. Open the service's **Environment** tab and copy `HIVE_API_KEY`. If Render does not
@@ -174,6 +175,13 @@ free-tier limits, and a generated `HIVE_API_KEY`.
 
    ```text
    https://<service>.onrender.com/mcp?tenantId=default
+   ```
+
+6. Prove every tool works on that link:
+
+   ```bash
+   BASE_URL=https://<service>.onrender.com API_KEY=<HIVE_API_KEY> \
+     REPO_URL=https://github.com/vercel/ms node scripts/verify-hosted-tools.mjs
    ```
 
 Free-plan caveats:
@@ -220,13 +228,25 @@ Remote connectors are brokered through Anthropic's cloud, so the URL must be pub
 reachable over HTTPS (not `localhost` for a remote connector).
 
 1. **Customize > Connectors > Add custom connector**.
-2. Name it `Hivemind`, URL `https://<service>.onrender.com/mcp?tenantId=default`.
+2. Name it `Hivemind`, URL `https://<service>.onrender.com/mcp?tenantId=default&apiKey=<HIVE_API_KEY>`.
 3. Authentication: **No sign in**.
-4. Under **Request headers**, add `Authorization` = `Bearer <HIVE_API_KEY>`.
+4. If your organization has the fixed-request-header beta, remove `&apiKey=` from the
+   URL and add a request header `Authorization` = `Bearer <HIVE_API_KEY>` instead.
 5. Save, then enable the connector in a conversation.
 
-Claude Desktop can also run the server locally through the stdio config in section 1;
-that path does not need a public URL.
+`HIVE_ALLOW_QUERY_KEY=true` is required for the URL-key form; the Render blueprint sets
+it. The key will appear in access logs, so header auth is preferable when available.
+
+Claude Desktop's `claude_desktop_config.json` is for local stdio servers; remote servers
+are added through the Connectors UI.
+
+### ChatGPT (custom app)
+
+1. Enable developer mode, then add a custom connector/app.
+2. URL: `https://<service>.onrender.com/mcp?tenantId=default&apiKey=<HIVE_API_KEY>`.
+3. Authentication: **No authentication**. ChatGPT supports OAuth or no-auth for remote
+   MCP; this server does not run an OAuth authorization server, so the URL key is the
+   supported path. Keep the URL private.
 
 ### Cursor (remote)
 
@@ -284,6 +304,26 @@ Authorization: Bearer <HIVE_API_KEY>
 
 ---
 
+### 3.1 Browser-only use (no client install)
+
+Open `https://<service>.onrender.com/graph?tenantId=default`. The page shell is public;
+it prompts once for `HIVE_API_KEY` and keeps it in `sessionStorage` for that tab. From
+there you can search the graph, include/exclude nodes, preview L0/L1/L2 content, watch
+the token budget, and copy a hand-off pack.
+
+The Markdown artifacts are one request each:
+
+```bash
+curl -s https://<service>.onrender.com/graph-overview?tenantId=default \
+  -H "Authorization: Bearer <HIVE_API_KEY>"
+curl -s "https://<service>.onrender.com/chat-start?tenantId=default&task=auth%20bug" \
+  -H "Authorization: Bearer <HIVE_API_KEY>"
+curl -s https://<service>.onrender.com/index-status?tenantId=default \
+  -H "Authorization: Bearer <HIVE_API_KEY>"
+```
+
+---
+
 ## 4. Index a repository on a hosted server
 
 Local path indexing is disabled on the gateway. Use a public `https` Git URL, or add a
@@ -335,7 +375,8 @@ be `https://`.
 |---|---|---|---|
 | `PORT` | `3000` | hosted | HTTP listen port. |
 | `HIVE_API_KEY` | empty | hosted | If set, requires `Authorization: Bearer <key>` on `/mcp`, `/sse`, `/messages`, `/index-repo`. |
-| `HIVE_DATA_ROOT` | current directory | hosted | Parent directory for `.hive/tenants`, `.hive/workspaces`, `.hive/repos`. |
+| `HIVE_DATA_ROOT` | current directory | hosted | Parent directory for `.hive/tenants`, `.hive/workspaces`, `.hive/repos`, `.hive/overviews`. |
+| `MODEL_CACHE_DIR` | framework default | both | Cache directory for the ONNX embedding model when embeddings are enabled. |
 | `HIVE_TENANT_ID` | `default` | stdio | Tenant namespace and default database name. |
 | `HIVE_REPO_ROOT` | current directory | stdio | Default repository to index. |
 | `HIVE_DB_PATH` | `<repo>/.hive/tenants/<tenant>.db` | stdio | Explicit SQLite path. |

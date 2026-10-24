@@ -18,7 +18,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { SecretsRedactor } from '@hivemind/core';
+import { SecretsRedactor, generateGraphOverview, generateChatStartCard } from '@hivemind/core';
 import { HiveContextService } from './context-service';
 import { createHiveMcpServer } from './server';
 import { buildGraphPayload, buildNodeDetail, assembleContextPack } from './ui/graph-payload';
@@ -178,6 +178,9 @@ export function createSseApp(options: HostedServerOptions = {}): express.Express
         graph: 'GET /graph?tenantId=default',
         graphJson: 'GET /graph.json?tenantId=default',
         graphNode: 'GET /graph/node?tenantId=default&id=<node>',
+        graphOverview: 'GET /graph-overview?tenantId=default',
+        chatStart: 'GET /chat-start?tenantId=default&task=<task>',
+        indexStatus: 'GET /index-status?tenantId=default',
         contextPack: 'POST /graph/context-pack { included, excluded, budget }',
         indexRepo: 'POST /index-repo { "repoUrl": "...", "tenantId": "default" }'
       },
@@ -370,7 +373,10 @@ export function createSseApp(options: HostedServerOptions = {}): express.Express
     }
   };
 
-  app.get('/graph', requireAuth, (_req: Request, res: Response) => {
+  // The page itself is a static shell with no tenant data. Keeping it public
+  // lets a browser open the link while the JSON endpoints stay authenticated;
+  // the page prompts for the API key and replays it as an Authorization header.
+  app.get('/graph', (_req: Request, res: Response) => {
     try {
       res
         .setHeader('Cache-Control', 'no-store')
@@ -405,6 +411,51 @@ export function createSseApp(options: HostedServerOptions = {}): express.Express
     } catch (error) {
       console.error('[HTTP] /graph.json failed:', error);
       res.status(500).json({ error: 'Failed to build graph payload.' });
+    }
+  });
+
+  app.get('/graph-overview', requireAuth, (req: Request, res: Response) => {
+    const tenantId = resolveTenant(req);
+    const task = typeof req.query.task === 'string' ? req.query.task.slice(0, 200) : undefined;
+    try {
+      const service = getService(tenantId);
+      const outputDir = path.join(dataRoot, '.hive', 'overviews', tenantId);
+      fs.mkdirSync(outputDir, { recursive: true });
+      const overviewPath = generateGraphOverview({ tenantId, db: service.db, outputDir, task });
+      const markdown = SecretsRedactor.redact(fs.readFileSync(overviewPath, 'utf8'));
+      res.setHeader('Cache-Control', 'no-store');
+      res.type('text/markdown; charset=utf-8').send(markdown);
+    } catch (error) {
+      console.error('[HTTP] /graph-overview failed:', error);
+      res.status(500).json({ error: 'Failed to generate the graph overview.' });
+    }
+  });
+
+  app.get('/chat-start', requireAuth, (req: Request, res: Response) => {
+    const tenantId = resolveTenant(req);
+    const task = typeof req.query.task === 'string' ? req.query.task.slice(0, 200) : undefined;
+    try {
+      const service = getService(tenantId);
+      const outputDir = path.join(dataRoot, '.hive', 'overviews', tenantId);
+      fs.mkdirSync(outputDir, { recursive: true });
+      const card = generateChatStartCard({ tenantId, db: service.db, outputDir, task });
+      res.setHeader('Cache-Control', 'no-store');
+      res.type('text/markdown; charset=utf-8').send(SecretsRedactor.redact(card));
+    } catch (error) {
+      console.error('[HTTP] /chat-start failed:', error);
+      res.status(500).json({ error: 'Failed to generate the chat-start card.' });
+    }
+  });
+
+  app.get('/index-status', requireAuth, (req: Request, res: Response) => {
+    const tenantId = resolveTenant(req);
+    try {
+      const service = getService(tenantId);
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(JSON.parse(SecretsRedactor.redact(JSON.stringify(service.getStatus()))));
+    } catch (error) {
+      console.error('[HTTP] /index-status failed:', error);
+      res.status(500).json({ error: 'Failed to read indexing status.' });
     }
   });
 
