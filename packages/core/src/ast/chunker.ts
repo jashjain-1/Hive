@@ -17,40 +17,35 @@ export class AstChunker {
   private pyLang!: Parser.Language;
   private initialized = false;
 
-async init(
-wasmDir: string = path.resolve(
-  __dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  'node_modules',
-  '@opensumi',
-  'tree-sitter-wasm'
-)
-): Promise<void> {
+async init(wasmDir?: string): Promise<void> {
+  // Resolve the grammar package from the dependency tree instead of assuming
+  // a monorepo-relative node_modules layout (which differs in Docker/npm installs).
+  const resolvedWasmDir = wasmDir ?? path.dirname(
+    require.resolve('@opensumi/tree-sitter-wasm/package.json')
+  );
+
 if (this.initialized) return;
 
     await ParserRuntime.init({
-      locateFile: (file: string) => path.join(wasmDir, file)
+      locateFile: (file: string) => path.join(resolvedWasmDir, file)
     });
 
     this.parser = new ParserRuntime();
 
     this.tsLang = await ParserRuntime.Language.load(
-      path.join(wasmDir, 'tree-sitter-typescript.wasm')
+      path.join(resolvedWasmDir, 'tree-sitter-typescript.wasm')
     );
 
     this.tsxLang = await ParserRuntime.Language.load(
-      path.join(wasmDir, 'tree-sitter-tsx.wasm')
+      path.join(resolvedWasmDir, 'tree-sitter-tsx.wasm')
     );
 
     this.jsLang = await ParserRuntime.Language.load(
-      path.join(wasmDir, 'tree-sitter-javascript.wasm')
+      path.join(resolvedWasmDir, 'tree-sitter-javascript.wasm')
     );
 
     this.pyLang = await ParserRuntime.Language.load(
-      path.join(wasmDir, 'tree-sitter-python.wasm')
+      path.join(resolvedWasmDir, 'tree-sitter-python.wasm')
     );
 
     this.initialized = true;
@@ -79,7 +74,9 @@ if (!this.initialized) {
 throw new Error('AstChunker not initialized. Call init() first.');
 }
 
-const normalizedPath = path.normalize(filePath);
+// Store and hash POSIX-style paths so globs, override rules, and Git impact
+// analysis behave identically on Windows and Unix.
+const normalizedPath = filePath.replace(/\\/g, '/');
 const ext = path.extname(normalizedPath).toLowerCase();
 
 if (ext === '.py') {
@@ -195,6 +192,11 @@ try {
     if (kind) {
       const startLine = currentNode.startPosition.row + 1;
       const endLine = currentNode.endPosition.row + 1;
+
+      // Anonymous arrows/closures need a distinct, stable display name.
+      if (name === 'anonymous') {
+        name = `anonymous@${startLine}`;
+      }
 
       const chunkText = lines
         .slice(startLine - 1, endLine)

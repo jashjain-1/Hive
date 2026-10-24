@@ -22,11 +22,12 @@ export class MerkleTree {
       ? sortedChildHashes.join('||')
       : '';
 
+    // I6: derived levels (L0 gist, L1 summary) must not affect the hash. Use
+    // authored L2 when present, falling back to L0 only for stub nodes that
+    // have no authored body.
     const authoredContent = [
       node.kind,
-      node.l0,
-      node.l1 ?? '',
-      node.l2 ?? '',
+      node.l2 ?? node.l0,
       node.name,
       node.filePath ?? '',
       node.startLine ?? 0,

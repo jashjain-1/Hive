@@ -31,6 +31,7 @@ import { RelevanceRanker } from './ranker';
 
 const TOKENS_PER_LEVEL = [20, 150, 800]; // L0, L1, L2 max tokens
 const MMR_LAMBDA = 0.70;
+const MAX_PACK_ITEMS = 24;
 
 export class KnapsackPacker {
   constructor(
@@ -56,6 +57,7 @@ export class KnapsackPacker {
     const proofEntries: NodeProofEntry[] = [];
     let usedTokens = 0;
     const selectedNodeIds = new Set<string>();
+    const selectedNodeCluster = new Map<string, string>();
 
     const candidateMap = new Map(candidates.map(n => [n.id, n]));
 
@@ -166,6 +168,11 @@ export class KnapsackPacker {
       externalVecScores
     );
 
+    // Relevance floor scales with the strongest match so a pack does not fill
+    // its budget with dozens of weak L0 names. Force-includes bypass this.
+    const topScore = scoredCandidates.reduce((max, candidate) => Math.max(max, candidate.score), 0);
+    const minRelevance = Math.max(0.20, topScore * 0.5);
+
     // 3. Bi-Level Step 1: Cluster Candidate Chunks
     const clusterMap = new Map<string, TaskCandidate[]>();
     for (const cand of scoredCandidates) {
@@ -210,15 +217,20 @@ export class KnapsackPacker {
     const clusterAllocMap = new Map(clusterAllocations.map(a => [a.clusterKey, a]));
     const deferredInClusters: TaskCandidate[] = [];
 
-    for (const [key, cands] of clusterMap.entries()) {
+    outer: for (const [key, cands] of clusterMap.entries()) {
       const clusterBudget = clusterBudgets.get(key) ?? 0;
       const allocRecord = clusterAllocMap.get(key)!;
       let clusterUsedTokens = 0;
 
-      // Apply MMR diversity inside cluster
+      // Apply MMR diversity inside cluster, preserving the original relevance
+      // score for level selection and threshold decisions.
       const scoredWithMmr = cands.map(candidate => {
         let maxSim = 0;
         for (const selectedId of selectedNodeIds) {
+          // Diversity is enforced within a cluster. Comparing against a
+          // different subsystem suppresses the most relevant code merely
+          // because an earlier docs cluster used similar vocabulary.
+          if (selectedNodeCluster.get(selectedId) !== key) continue;
           const selectedNode = candidateMap.get(selectedId);
           if (selectedNode) {
             const sim = this.computeSimilarity(candidate.node, selectedNode);
@@ -226,19 +238,23 @@ export class KnapsackPacker {
           }
         }
         const mmrScore = MMR_LAMBDA * candidate.score - (1 - MMR_LAMBDA) * maxSim;
-        return { ...candidate, score: mmrScore };
+        return { ...candidate, originalScore: candidate.score, score: mmrScore };
       });
 
       scoredWithMmr.sort((a, b) => b.score - a.score);
 
       for (const candidate of scoredWithMmr) {
-        if (candidate.score < 0.20) {
-          const reason = `Low task relevance (${candidate.score.toFixed(2)}) | Excluded to preserve budget`;
+        if (items.length >= MAX_PACK_ITEMS) break outer;
+
+        // MMR may penalize a relevant node simply because an earlier cluster
+        // already covered similar vocabulary. Defer only on true relevance.
+        if (candidate.originalScore < minRelevance) {
+          const reason = `Low task relevance (${candidate.originalScore.toFixed(2)}) | Excluded to preserve budget`;
           deferred.push({
             nodeId: candidate.node.id,
             name: candidate.node.name,
             filePath: candidate.node.filePath,
-            score: candidate.score,
+            score: candidate.originalScore,
             reason,
             clusterKey: key
           });
@@ -255,7 +271,7 @@ export class KnapsackPacker {
         const remainingGlobalBudget = effectiveBudget - usedTokens;
         const localBudgetLimit = Math.min(remainingClusterBudget, remainingGlobalBudget);
 
-        const bestLevel = this.selectBestLevel(candidate.node, localBudgetLimit, candidate.score);
+        const bestLevel = this.selectBestLevel(candidate.node, localBudgetLimit, candidate.originalScore);
 
         if (bestLevel.level === -1) {
           // Defer for now, but save for secondary global sweep if remainingGlobalBudget allows
@@ -280,6 +296,7 @@ export class KnapsackPacker {
         allocRecord.usedTokens += bestLevel.tokens;
         allocRecord.selectedCount++;
         selectedNodeIds.add(candidate.node.id);
+        selectedNodeCluster.set(candidate.node.id, key);
 
         if (candidate.proofEntry) {
           candidate.proofEntry.status = 'INCLUDED';
@@ -291,12 +308,18 @@ export class KnapsackPacker {
     }
 
     // 5. Global Sweep: Use any unconsumed cluster budget for top deferred candidates
-    deferredInClusters.sort((a, b) => b.score - a.score);
+    deferredInClusters.sort((a, b) =>
+      ((b as TaskCandidate & { originalScore?: number }).originalScore ?? b.score) -
+      ((a as TaskCandidate & { originalScore?: number }).originalScore ?? a.score)
+    );
     for (const candidate of deferredInClusters) {
       if (selectedNodeIds.has(candidate.node.id)) continue;
+      if (items.length >= MAX_PACK_ITEMS) break;
 
+      const candidateScore = (candidate as TaskCandidate & { originalScore?: number }).originalScore ?? candidate.score;
+      if (candidateScore < minRelevance) continue;
       const remainingGlobalBudget = effectiveBudget - usedTokens;
-      const bestLevel = this.selectBestLevel(candidate.node, remainingGlobalBudget, candidate.score);
+      const bestLevel = this.selectBestLevel(candidate.node, remainingGlobalBudget, candidateScore);
 
       if (bestLevel.level === -1) {
         const reason = `Cluster budget exhausted & global budget reached (${usedTokens}/${effectiveBudget} tokens)`;
@@ -304,7 +327,7 @@ export class KnapsackPacker {
           nodeId: candidate.node.id,
           name: candidate.node.name,
           filePath: candidate.node.filePath,
-          score: candidate.score,
+          score: candidateScore,
           reason,
           clusterKey: candidate.clusterKey
         });
@@ -329,6 +352,9 @@ export class KnapsackPacker {
 
         usedTokens += bestLevel.tokens;
         selectedNodeIds.add(candidate.node.id);
+        if (candidate.clusterKey) {
+          selectedNodeCluster.set(candidate.node.id, candidate.clusterKey);
+        }
 
         const alloc = clusterAllocMap.get(candidate.clusterKey ?? '');
         if (alloc) {
@@ -342,6 +368,67 @@ export class KnapsackPacker {
           candidate.proofEntry.decisionFactor = `Selected in Global Sweep at L${bestLevel.level} (${bestLevel.tokens} tok)`;
           proofEntries.push(candidate.proofEntry);
         }
+      }
+    }
+
+    // 6. Greedy Upgrade Pass: spend otherwise-unused budget on the highest
+    // marginal-coverage upgrades (L0 -> L1 -> L2) before closing the pack.
+    const scoreById = new Map(scoredCandidates.map(candidate => [candidate.node.id, candidate.score]));
+    for (const node of forcedIncludes) scoreById.set(node.id, 1.0);
+
+    while (true) {
+      const remainingBudget = effectiveBudget - usedTokens;
+      if (remainingBudget <= 0) break;
+
+      const upgrades = items
+        .map(item => {
+          if (item.level >= 2) return null;
+          const node = candidateMap.get(item.nodeId);
+          if (!node) return null;
+
+          const nextLevel = (item.level + 1) as 1 | 2;
+          const nextContent = nextLevel === 1 ? node.l1 : node.l2;
+          if (!nextContent) return null;
+
+          const nextTokens = Math.min(
+            TOKENS_PER_LEVEL[nextLevel],
+            nextLevel === 1 ? (node.tokL1 || TOKENS_PER_LEVEL[1]) : (node.tokL2 || TOKENS_PER_LEVEL[2])
+          );
+          const delta = nextTokens - item.tokens;
+          if (delta <= 0) return null;
+
+          const coverageGain = nextLevel === 1 ? 0.35 : 0.30;
+          const score = scoreById.get(item.nodeId) ?? 0.5;
+          return {
+            item,
+            node,
+            nextLevel,
+            nextContent,
+            nextTokens,
+            delta,
+            ratio: (score * coverageGain) / delta
+          };
+        })
+        .filter((upgrade): upgrade is NonNullable<typeof upgrade> => Boolean(upgrade))
+        .sort((a, b) => b.ratio - a.ratio);
+
+      const best = upgrades.find(upgrade => upgrade.delta <= remainingBudget);
+      if (!best) break;
+
+      const upgradeScore = scoreById.get(best.item.nodeId) ?? 0.5;
+      best.item.level = best.nextLevel;
+      best.item.tokens = best.nextTokens;
+      best.item.content = best.nextContent;
+      best.item.reason = `Relevance ${upgradeScore.toFixed(2)} | ${best.node.kind} ${best.node.name} | L${best.nextLevel} [Cluster: ${best.item.clusterKey ?? 'module:general'}] | upgraded via marginal coverage`;
+      usedTokens += best.delta;
+
+      const alloc = clusterAllocMap.get(best.item.clusterKey ?? '');
+      if (alloc) alloc.usedTokens += best.delta;
+
+      const proof = proofEntries.find(entry => entry.nodeId === best.item.nodeId);
+      if (proof) {
+        proof.chosenLevel = best.nextLevel;
+        proof.decisionFactor = `Upgraded to L${best.nextLevel} via marginal coverage (${best.delta} extra tok)`;
       }
     }
 

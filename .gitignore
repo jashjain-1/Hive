@@ -4,6 +4,15 @@ dist/
 build/
 *.tsbuildinfo
 
+# Generated Hivemind state (tracked: .hive/sessions/, .hive/overrides.json)
+.hive/tenants/
+.hive/workspaces/
+.hive/repos/
+.hive/fixture/
+.hive/graph.json
+.hive/sse.pid
+.hive/sse-*.pid
+.hive/*.pid
 # SQLite databases & temp files
 .hive/*.db
 .hive/*.db-wal

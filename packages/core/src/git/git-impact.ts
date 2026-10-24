@@ -17,10 +17,15 @@ export class GitImpactAnalyzer {
    */
   public getChangedFiles(): string[] {
     try {
-      const output = execSync('git status -s', { cwd: this.repoRoot, encoding: 'utf8' });
+      const output = execSync('git status -s', {
+        cwd: this.repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore']
+      });
       return output
         .split('\n')
-        .map(line => line.trim().slice(3).trim())
+        .map(line => line.match(/^.{2}\s+(.+)$/)?.[1] ?? '')
+        .map(file => file.includes(' -> ') ? file.split(' -> ').pop()!.trim() : file.trim())
         .filter(f => f.length > 0);
     } catch {
       return [];

@@ -9,11 +9,11 @@ This project is a token-lean Model Context Protocol (MCP) server that equips AI 
 ## 1. Project Summary
 
 * **Objective**: Maximize useful work per token; prevent agents from wasting context windows on whole-file dumps and speculative grepping.
-* **Protocol**: Model Context Protocol (MCP) over **Server-Sent Events (SSE)** (for remote cloud hosting) and **Stdio** (for local CLI execution).
+* **Protocol**: Model Context Protocol (MCP) over **Streamable HTTP** (`POST /mcp`) and legacy **SSE** (`/sse`) for remote hosting, plus **stdio** for local execution.
 * **Storage**: Isolated SQLite database in Write-Ahead Logging (WAL) mode per tenant (`.hive/tenants/<tenantId>.db`) for zero cross-tenant leakage.
 * **Intelligence**: WebAssembly Tree-sitter AST chunker + local ONNX embeddings (`@xenova/transformers`, `bge-small-en-v1.5`, zero external API calls) + SQLite FTS5 lexical ranking.
 * **Scope**: **100% Backend Engine**. No frontend/UI overhead.
-* **Scale**: **No Repository Size Cap** — streams files sequentially with batch SQLite commits, effortlessly indexing monorepos and multi-gigabyte codebases.
+* **Scale**: Bounded and configurable — `HIVE_MAX_FILES` / `HIVE_MAX_FILE_BYTES` cap each pass, files stream sequentially, and large binaries become metadata stubs instead of tokenized text.
 * **Full-Board Project Scale**: Handles multi-tier polyglot codebases (backend APIs, desktop GUIs, ML inference pipelines, database migrations, and coordination markdown files) with deep-ignoring of `.venv`, media folders, and heavy binary model stubbing.
 * **Security**: Ephemeral GitHub tokens held strictly in volatile RAM, in-flight secrets redaction, rate limiting, and Helmet security headers.
 
@@ -72,7 +72,7 @@ Hive/
 │   ├── types/          # SHARED: Master TypeScript contracts and DTOs
 │   ├── core/           # KOMAL: Storage (SQLite WAL), Tree-sitter AST, Document Chunker, Git Impact
 │   ├── pack/           # ANJALI: Ranker, Local Embeddings, Knapsack Compiler, Next-Hop, ROI Ledger
-│   └── mcp/            # JASH: MCP Server (Stdio & SSE), 12 Tools, Window Protocol, Cloud Gateway
+│   └── mcp/            # JASH: MCP Server (stdio + Streamable HTTP + SSE), 14 Tools, Cloud Gateway
 ├── .hive/
 │   ├── overrides.json  # Context pins (force_include / force_exclude)
 │   ├── tenants/        # Multi-tenant isolated databases (git-ignored)
@@ -81,8 +81,14 @@ Hive/
 ├── render.yaml         # Free Render deployment blueprint
 └── scripts/
     ├── ai-session-logger.js    # Pre-push git validation hook
-    └── test-e2e-simulation.ts  # End-to-end multi-agent test suite (13/13 passing)
+    └── e2e-smoke.mjs   # Real end-to-end integration run (11 checks)
 ```
+
+Documentation:
+
+* [README.md](README.md) — architecture, formulations, and invariants.
+* [docs/HOSTING.md](docs/HOSTING.md) — stdio, Docker, Render, client configs, troubleshooting.
+* [docs/MCP_USAGE.md](docs/MCP_USAGE.md) — the agent workflow for all 14 tools.
 
 ### Team Responsibilities and AI Directives
 * **Jash (Project Lead / MCP Protocol and Cloud)**:
@@ -102,8 +108,8 @@ Hive/
 ## 5. Development and Testing Commands
 
 ```bash
-# 1. Install all dependencies across the monorepo
-npm install
+# 1. Install dependencies exactly as locked
+npm ci
 
 # 2. Build all packages
 npm run build
@@ -113,9 +119,12 @@ npm test -w @hivemind/core    # Tested by Komal
 npm test -w @hivemind/pack    # Tested by Anjali
 npm test -w @hivemind/mcp     # Tested by Jash
 
-# 4. Run End-to-End Multi-Agent Simulation (13 Invariants)
-node scripts/test-e2e-simulation.ts
+# 4. Run the real end-to-end integration suite (11 checks)
+npm run test:e2e
 
-# 5. Start Hosted MCP SSE Server Locally
+# 5. Start the hosted gateway locally (Streamable HTTP + legacy SSE)
 npm run start:sse -w @hivemind/mcp
+
+# 6. Explore the tools interactively
+npm run inspector
 ```

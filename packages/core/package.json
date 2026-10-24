@@ -10,10 +10,11 @@
   },
   "dependencies": {
     "@hivemind/types": "*",
-    "better-sqlite3": "^11.8.1",
-    "web-tree-sitter": "^0.22.6",
-    "pdf-parse": "^1.1.1",
+    "@opensumi/tree-sitter-wasm": "^1.1.2",
+    "better-sqlite3": "^12.4.1",
     "officeparser": "^4.1.1",
+    "pdf-parse": "^1.1.1",
+    "web-tree-sitter": "^0.22.6",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

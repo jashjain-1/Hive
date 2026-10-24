@@ -29,8 +29,8 @@ export class CrossModalEntityLinker {
               (doc.l2.includes(sym.name) || doc.name.includes(sym.name))) {
             // Forward link: doc mentions code
             insertLink.run(doc.id, sym.id, 'mentions', 1.0);
-            // Reverse link: code documented by doc
-            insertLink.run(sym.id, doc.id, 'documented_by', 0.9);
+            // Reverse link: code is documented by the doc
+            insertLink.run(sym.id, doc.id, 'documents', 0.9);
             createdLinks += 2;
           }
         }

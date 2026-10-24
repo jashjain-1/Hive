@@ -1,8 +1,4 @@
-import { pipeline, env } from '@xenova/transformers';
 import { HIVE_CONSTANTS } from '@hivemind/types';
-
-// Run offline - no network calls
-env.allowLocalModels = true;
 
 export class LocalEmbeddingEngine {
   private extractor: any = null;
@@ -11,6 +7,12 @@ export class LocalEmbeddingEngine {
 
   async init(): Promise<void> {
     if (this.initialized) return;
+
+    // Load the heavy ONNX runtime lazily. This keeps stdio startup fast and
+    // lets lexical-only deployments avoid the optional native `sharp` module.
+    const { pipeline, env } = await import('@xenova/transformers');
+    env.allowLocalModels = true;
+
     this.extractor = await pipeline('feature-extraction', this.modelName, {
       quantized: true, // 100% offline WASM ONNX execution
       progress_callback: () => {} // Suppress progress spam

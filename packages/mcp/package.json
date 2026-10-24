@@ -2,14 +2,14 @@
   "name": "@hivemind/mcp",
   "version": "1.0.0",
   "bin": {
-    "hive-mcp": "./dist/index.js"
+    "hive-mcp": "./dist/main.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "rm -f dist/sharp-error.js && tsc && node scripts/copy-ui.mjs",
     "test": "vitest run",
-    "start": "node dist/index.js",
+    "start": "node dist/main.js",
     "start:sse": "node dist/sse-server.js",
     "clean": "rimraf dist"
   },

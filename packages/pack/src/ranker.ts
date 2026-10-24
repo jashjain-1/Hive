@@ -118,10 +118,18 @@ export class RelevanceRanker {
       if (score > maxVecScore) maxVecScore = score;
     }
 
+    // Normalize BM25 relative to the strongest result for this query. FTS5
+    // returns negative values where more negative is better, so callers pass
+    // magnitudes; taking raw/10 flattened every real score into near-zero.
+    let maxBm25 = 0;
+    for (const score of bm25Results.values()) {
+      maxBm25 = Math.max(maxBm25, Math.abs(score));
+    }
+
     for (const node of candidates) {
       // 1. BM25 lexical score (normalized to [0, 1])
       const bm25Raw = bm25Results.get(node.id) ?? 0;
-      const bm25Normalized = this.normalizeBm25(bm25Raw, candidates);
+      const bm25Normalized = this.normalizeBm25(bm25Raw, maxBm25);
 
       // 2. Vector semantic similarity
       const vecScore = vecScores.get(node.id) ?? 0;
@@ -190,9 +198,9 @@ export class RelevanceRanker {
     return `tree:${node.tree}`;
   }
 
-  private normalizeBm25(rawScore: number, candidates: NodeRecord[]): number {
-    if (candidates.length === 0) return 0;
-    return Math.min(1.0, rawScore / 10.0);
+  private normalizeBm25(rawScore: number, maxScore: number): number {
+    if (maxScore <= 0) return 0;
+    return Math.min(1.0, Math.abs(rawScore) / maxScore);
   }
 
   private computeGraphScore(

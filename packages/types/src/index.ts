@@ -256,6 +256,7 @@ export interface PackResponse {
   intent?: IntentAnalysis;
   clusters?: ClusterBudgetAllocation[];
   proofMatrix?: PackProofMatrix;
+  roi?: RoiMetrics;
 }
 
 export interface PackReceipt {
