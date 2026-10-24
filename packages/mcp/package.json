@@ -7,22 +7,22 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "rm -f dist/sharp-error.js && tsc",
     "test": "vitest run",
     "start": "node dist/index.js",
     "start:sse": "node dist/sse-server.js",
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@hivemind/types": "*",
-    "@hivemind/core": "*",
-    "@hivemind/pack": "*",
-    "@modelcontextprotocol/sdk": "^1.6.0",
+    "@hivemind/types": "workspace:*",
+    "@hivemind/core": "workspace:*",
+    "@hivemind/pack": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.23.0",
     "cors": "^2.8.5",
-    "express": "^4.19.2",
-    "express-rate-limit": "^7.2.0",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.4.0",
     "helmet": "^7.1.0",
-    "zod": "^3.22.4"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

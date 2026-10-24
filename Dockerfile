@@ -43,8 +43,27 @@ COPY --chown=node:node --from=builder /app/packages/ /app/packages/
 COPY --chown=node:node --from=builder /app/node_modules/ /app/node_modules/
 COPY --chown=node:node --from=builder /app/tsconfig.base.json /app/tsconfig.base.json
 
+# Pre-download the ONNX embedding model (bge-small-en-v1.5 quantized) during build
+# so the cold-start on Render free tier does not pay the download on every wake.
+# Model is ~23 MB quantized; cached under the node user's huggingface cache dir.
+# NOTE: sharp (transitive of express-rate-limit or helmet in some trees) is a no-op in
+# this image — the server does not use image processing. If the builder stage installed it
+# for native bindings, the runner only needs the JS layer. We intentionally do NOT re-run
+# npm install here; we reuse builder's node_modules verbatim.
+RUN mkdir -p /home/node/.cache/huggingface/hub && \
+    chown -R node:node /home/node/.cache && \
+    su -s /bin/sh node -c "cd /app && node -e \"const { pipeline } = require('@xenova/transformers'); pipeline('feature-extraction', 'Xenova/bge-small-en-v1.5', { quantized: true }).then(() => process.exit(0)).catch(e => { console.error(e.message); process.exit(1); })\"" || echo 'WARNING: model pre-download failed -- server will download on first request'
+
 # Create isolated directory for tenant databases
 RUN mkdir -p /app/.hive/tenants
+
+# NOTE ON FREE TIER PERSISTENCE (see README for full discussion):
+# Render free tier containers are ephemeral — /app/.hive/tenants and the model cache
+# survive only within one container lifecycle. On sleep/wake or restart, tenant DBs are lost
+# and the model cache is lost, reverting to a first-request download.
+# For durable multi-session hosting, attach a Render Disk (paid) or switch the storage
+# layer to an external PostgreSQL. For demo/alpha use, re-indexing on cold start is acceptable.
+LABEL description="Hivemind Context Engine — ephemeral-per-lifecycle on Render free tier"
 
 EXPOSE 3000
 

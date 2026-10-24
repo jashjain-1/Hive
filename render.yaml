@@ -12,3 +12,7 @@ services:
         value: 3000
       - key: NODE_ENV
         value: production
+      - key: MODEL_CACHE_DIR
+        value: /home/node/.cache/huggingface/hub
+      - key: HIVE_TENANT_DIR
+        value: /app/.hive/tenants

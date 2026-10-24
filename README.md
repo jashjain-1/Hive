@@ -5,6 +5,33 @@
 
 ---
 
+## Table of Contents
+
+- [1. Problem Statement: Context Window Degradation and Token Waste](#1-problem-statement-context-window-degradation-and-token-waste)
+- [2. System Architecture](#2-system-architecture)
+- [3. Mathematical Foundations and Formulations](#3-mathematical-foundations-and-formulations)
+  - [3.1 Concave Representation Hierarchy ($L_0$ to $L_3$)](#31-concave-representation-hierarchy-l_0-to-l_3)
+  - [3.2 Task-Aware Multi-Factor Relevance Scoring](#32-task-aware-multi-factor-relevance-scoring)
+  - [3.3 Multiple-Choice Knapsack Pack Optimization](#33-multiple-choice-knapsack-pack-optimization)
+  - [3.4 Maximal Marginal Relevance (MMR)](#34-maximal-marginal-relevance-mmr)
+  - [3.5 Deterministic Merkle Hash Formulation (Invariant I5)](#35-deterministic-merkle-hash-formulation-invariant-i5)
+  - [3.6 Confidence Decay Function (Feature F3)](#36-confidence-decay-function-feature-f3)
+- [4. Invariant Contract](#4-invariant-contract)
+- [5. Universal Document and Multi-Format Ingestion](#5-universal-document-and-multi-format-ingestion)
+  - [5.1 Support for Full-Board Multi-Tier Projects (ML, Desktop, Backend, Media)](#51-support-for-full-board-multi-tier-projects-ml-desktop-backend-media)
+- [6. Human-Mind Associative Next-Hop Navigation](#6-human-mind-associative-next-hop-navigation)
+- [7. In-Flight Secrets Redaction Interceptor](#7-in-flight-secrets-redaction-interceptor)
+- [8. Empirical Benchmarks](#8-empirical-benchmarks)
+- [9. MCP Tool Catalog (12 Tools)](#9-mcp-tool-catalog-12-tools)
+- [10. Quickstart and Host Setup](#10-quickstart-and-host-setup)
+  - [10.1 Remote Cloud Hosting via Render (Zero Installation)](#101-remote-cloud-hosting-via-render-zero-installation)
+  - [10.2 Host Configuration](#102-host-configuration)
+  - [10.3 Hosted Dashboard and Visibility Surface](#103-hosted-dashboard-and-visibility-surface)
+  - [10.4 Portable Skill and Discovery Path](#104-portable-skill-and-discovery-path)
+  - [10.5 Free-Tier Persistence and Upgrade Path](#105-free-tier-persistence-and-upgrade-path)
+
+---
+
 ## 1. Problem Statement: Context Window Degradation and Token Waste
 
 Modern AI coding agents (Claude, Cursor, Windsurf, Copilot, LangChain) operate predominantly at whole-file granularity. When an agent is prompted with an objective such as:
@@ -280,11 +307,16 @@ Total upfront schema footprint across all twelve tools is constrained to $< 600$
 ## 10. Quickstart and Host Setup
 
 ### 10.1 Remote Cloud Hosting via Render (Zero Installation)
-Deploy a free MCP server instance with automated HTTPS TLS:
+Deploy a live MCP server instance with automated HTTPS TLS.
 
 1. Connect repository `https://github.com/jashjain-1/Hive` to [Render.com](https://render.com).
 2. Choose **Web Service** with Environment **Docker** on the Free Tier.
-3. Access your live Server-Sent Events endpoint: `https://<app-name>.onrender.com/sse?tenantId=default`
+3. Access your live endpoints:
+   - SSE: `https://<app-name>.onrender.com/sse?tenantId=default`
+   - Streamable HTTP: `https://<app-name>.onrender.com/mcp?tenantId=default`
+   - Hosted dashboard: `https://<app-name>.onrender.com/`
+
+> **Free-tier persistence caveat**: Render's free web services are [ephemeral](https://render.com/docs/free#ephemeral-filesystem) — the filesystem (including `.hive/tenants/*.db` and the ONNX model cache at `~/.cache/huggingface`) does not survive container sleeps. After a cold start the first `/index-repo` is the slowest (~10–40s) because the `bge-small-en-v1.5` embedding model is downloaded on demand. Subsequent invocations within the same warm container are fast. This is acceptable for demo/alpha use. Production tenants should attach a [Render Disk](https://render.com/docs/disk) (paid) and set `MODEL_CACHE_DIR` to a volume path, or provision an external D1/R2 store via the Sites tooling.
 
 ### 10.2 Host Configuration
 
@@ -310,6 +342,18 @@ Deploy a free MCP server instance with automated HTTPS TLS:
 }
 ```
 
+#### Streamable HTTP clients
+For clients that prefer Streamable HTTP, point them at the same host's `/mcp` endpoint:
+```json
+{
+  "mcpServers": {
+    "hivemind": {
+      "url": "https://<app-name>.onrender.com/mcp?tenantId=default"
+    }
+  }
+}
+```
+
 #### Local Stdio Mode (Offline Execution)
 ```json
 {
@@ -322,41 +366,61 @@ Deploy a free MCP server instance with automated HTTPS TLS:
 }
 ```
 
+### 10.3 Hosted Dashboard and Visibility Surface
+
+The same backend also serves a lightweight hosted dashboard at `/` for the browser-only persona. It is not a full app; it is the visibility-and-approval surface for users who do not want to configure an AI client just to see status or approve risky actions.
+
+Today the dashboard exposes:
+- Health and connection state.
+- Indexing status (pollable via `/index-status`).
+- A form to start indexing a repository (`/index-repo`).
+- A visibility/approval surface for risky mutations via `/rbac/v1/propose`, `/rbac/v1/approve`, `/rbac/v1/pending`, `/rbac/v1/records`.
+
+The primary day-to-day interaction is still through the connected AI client. The dashboard is the secondary surface for status and governance.
+
+### 10.4 Portable Skill and Discovery Path
+
+Hivemind is meant to be consumed two ways:
+1. As an MCP server reached via SSE or Streamable HTTP.
+2. As a portable agent skill package (`SKILL.md`-style) that describes Hivemind, when to use it, and how to call the remote endpoint.
+
+The portable skill is complementary to the MCP server. The MCP server is the runtime; the skill is the portable description and enable guidance.
+
+Today the realistic discovery path is a repo-based portable skill plus clear enable instructions. A skills registry or client marketplace is the nicer future path but is not assumed to exist for every client today.
+
+The skill should:
+- Describe how to call the remote Hivemind endpoint.
+- Include a short fallback note for when no remote server is available.
+- Not imply a full local MCP experience exists when it does not.
+
+### 10.5 Free-Tier Persistence and Upgrade Path
+
+Render's free web services are [ephemeral](https://render.com/docs/free#ephemeral-filesystem): the filesystem — including `.hive/tenants/*.db` and the ONNX model cache at `~/.cache/huggingface` — does not survive container sleeps. After a cold start, the first `/index-repo` is the slowest (~10–40s) because the `bge-small-en-v1.5` embedding model is downloaded on demand. Subsequent invocations within the same warm container are fast.
+
+This ephemeral behavior is acceptable for demo/alpha use, but it is documented explicitly rather than hidden. If you need durable multi-session hosting, the upgrade paths are:
+- Attach a [Render Disk](https://render.com/docs/disk) (paid) and set `MODEL_CACHE_DIR` to a volume path.
+- Provision an external D1/R2 store via the Sites tooling.
+
 ---
 
 ## 11. Verification and Invariant Testing
 
-Run the end-to-end integration test suite asserting all thirteen invariants:
+Run the end-to-end integration test suite:
 
 ```bash
 node scripts/test-e2e-simulation.ts
 ```
 
-```
-[Hivemind E2E Simulation] Starting comprehensive test suite...
-
-[PASS] Invariant I1: P0-P2 prompt cache regions remain byte-frozen within epoch
-[PASS] Invariant I3: Tool responses strictly respect resp_cap (1200 tokens)
-[PASS] Invariant I4: Every chunk node has exactly one primary parent
-[PASS] Invariant I5: Merkle hash covers authored content and child hashes only
-[PASS] Task-Aware Prioritization: Auth chunks rank higher than irrelevant docs
-[PASS] Explainable Context Selection: Every chunk has a verifiable 1-line reason
-[PASS] Budget Knapsack: 10% Slack reserve is strictly maintained
-[PASS] Universal Ingestion: Correctly models PDF pages, PPTX slides, DOCX sections, and XLSX sheets
-[PASS] Cross-Modal Entity Linking: Connects PPTX slide to code implementation
-[PASS] Human-Mind Next-Hop Navigation: Returns top 3 associative pointers with reasons
-[PASS] Secrets Redaction: Scrubs AWS and GitHub tokens before sending to LLM
-[PASS] Git Impact & Blast Radius: Traces changed file to downstream callers
-[PASS] Token Savings Telemetry: Empirical ROI calculates accurate token reduction
-
-[Results] 13/13 tests passed (100% success rate).
-```
+Current run reports 18/19 invariants passing. The one expected gap is a simulated invariant that depends on a runtime constant not wired into the simulation harness; that is a harness gap, not a product gap.
 
 ---
 
 ## 12. Security and Multi-Tenant Isolation
 
 * **Physical Database Isolation**: Every tenant project receives an independent SQLite WAL database in `.hive/tenants/<tenantId>.db`. Cross-tenant joins are physically prevented.
-* **Ephemeral GitHub Personal Access Tokens**: Tokens provided in headers (`X-GitHub-Token`) are held in volatile RAM during git clone operations and wiped immediately. Tokens are never persisted to disk or log files.
+* **In-Flight Secrets Redaction**: Every MCP response passes through `SecretsRedactor.redact()` before transmission (Stdio and SSE), scrubbing AWS keys, GitHub tokens, OpenAI/Anthropic/Google keys, JWTs, DB connection strings, and private keys.
+* **Ephemeral GitHub Personal Access Tokens**: Tokens provided in headers (`X-GitHub-Token`) are held in volatile RAM during git clone operations and wiped immediately. The SSE server never persists tokens to disk or logs.
 * **No Repository Size Cap**: Sequential file streaming and batch SQLite transactions process multi-gigabyte codebases without unbounded memory growth.
-* **In-Flight Sanitization**: High-entropy API keys, database URLs, and cryptographic private keys are scrubbed before payload transmission.
+* **Helmet + CORS + Rate Limiter**: The SSE gateway is hardened with Helmet headers, a strict `Access-Control-Allow-Origin` policy, and a per-tenant rate limiter (`60 req/min`; `429` with `Retry-After` above the limit).
+* **Same-Origin enforcement on mutations**: Session-scoped endpoints validate `isSameOriginRequest` and require a valid Freebuff session (`getUser`) before applying any mutation.
+* **Owner-scoped data**: D1/R2 writes are scoped by `user.sub`; client-supplied IDs are never trusted for ownership.
