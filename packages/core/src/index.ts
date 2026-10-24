@@ -5,6 +5,7 @@ export { CrossModalEntityLinker } from './links/cross-linker';
 export { MerkleTree } from './merkle';
 export { rebuildClosure as rebuildClosureTable, isDescendant, getDescendants, getAncestors } from './closure';
 export { exportGraphToJson, importGraphFromJson } from './graph-exporter';
+export { generateGraphOverview, generateChatStartCard } from './graph-overview';
 export { IgnoreEngine } from './ignore/ignore-rules';
 export { SecretsRedactor } from './security/secrets-redactor';
 export { LiveFsWatcher } from './watcher/fs-watcher';

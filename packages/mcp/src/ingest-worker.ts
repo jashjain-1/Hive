@@ -21,7 +21,7 @@ import { AstChunker } from '@hivemind/core';
 import { UniversalDocChunker } from '@hivemind/core';
 import { CrossModalEntityLinker } from '@hivemind/core';
 import { MerkleTree } from '@hivemind/core';
-import { exportGraphToJson } from '@hivemind/core';
+import { exportGraphToJson, generateGraphOverview } from '@hivemind/core';
 import { IgnoreEngine } from '@hivemind/core';
 import { NodeRecord } from '@hivemind/types';
 
@@ -261,10 +261,13 @@ async function main() {
     }
     writeStatus({ status: 'hashes_computed', progress: 0.90, tenantId, cloneDir, nodeCount: allNodes.length });
 
-    // 10. Export graph to JSON
+    // 10. Export graph to JSON + generate human-readable overview
     const graphPath = path.join(repoRoot, '.hive', 'graph.json');
     exportGraphToJson(db, graphPath);
-    writeStatus({ status: 'exported', progress: 0.95, tenantId, cloneDir, graphPath });
+    const overviewDir = path.join(repoRoot, '.hive');
+    const overviewPath = generateGraphOverview({ tenantId, db, outputDir: overviewDir });
+    console.log(`[IngestWorker ${tenantId}] Graph overview written to ${overviewPath}`);
+    writeStatus({ status: 'exported', progress: 0.95, tenantId, cloneDir, graphPath, overviewPath });
 
     // 11. Cleanup temp clone
     try { fs.rmSync(cloneDir, { recursive: true, force: true }); } catch {}

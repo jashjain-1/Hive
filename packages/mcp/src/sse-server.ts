@@ -20,7 +20,7 @@ import { AstChunker } from '@hivemind/core';
 import { UniversalDocChunker } from '@hivemind/core';
 import { CrossModalEntityLinker } from '@hivemind/core';
 import { MerkleTree } from '@hivemind/core';
-import { exportGraphToJson } from '@hivemind/core';
+import { exportGraphToJson, generateGraphOverview, generateChatStartCard } from '@hivemind/core';
 import { IgnoreEngine } from '@hivemind/core';
 import { GitImpactAnalyzer } from '@hivemind/core';
 import { OverridesManager } from '@hivemind/pack';
@@ -1018,6 +1018,55 @@ app.get('/index-status', (req: Request, res: Response) => {
     res.json({ tenantId, statusFile, ...JSON.parse(raw) });
   } catch {
     res.json({ tenantId, status: 'unreadable', statusFile });
+  }
+});
+
+// 12a. Graph Overview — human-readable Markdown map of the context graph
+// Regenerates GRAPH_OVERVIEW.md from the live tenant DB and serves it.
+// Also produces a compact chat-start card for AI agents to paste at session open.
+app.get('/graph-overview', (req: Request, res: Response) => {
+  const rawTenantId = (req.query.tenantId as string) || 'public';
+  const tenantId = rawTenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const dbPath = path.join(TENANTS_DIR, `${tenantId}.db`);
+
+  if (!fs.existsSync(dbPath)) {
+    res.status(404).json({ error: 'No tenant database found for ' + tenantId });
+    return;
+  }
+
+  try {
+    const db = initializeDatabase(dbPath);
+    const overviewPath = generateGraphOverview({ tenantId, db, outputDir: REPO_TEMP_DIR });
+    const markdown = fs.readFileSync(overviewPath, 'utf8');
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="GRAPH_OVERVIEW.md"');
+    res.send(markdown);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate graph overview', details: String(err) });
+  }
+});
+
+// 12b. Chat-Start Card — compact < 300 token summary for AI agents
+// An agent calls this at the start of every session and pastes the result.
+// The card updates every time the graph changes (after indexing or writes).
+app.get('/chat-start', (req: Request, res: Response) => {
+  const rawTenantId = (req.query.tenantId as string) || 'public';
+  const tenantId = rawTenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const dbPath = path.join(TENANTS_DIR, `${tenantId}.db`);
+  const task = (req.query.task as string) || undefined;
+
+  if (!fs.existsSync(dbPath)) {
+    res.status(404).json({ error: 'No tenant database found for ' + tenantId });
+    return;
+  }
+
+  try {
+    const db = initializeDatabase(dbPath);
+    const card = generateChatStartCard({ tenantId, db, outputDir: REPO_TEMP_DIR, task });
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.send(card);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate chat start card', details: String(err) });
   }
 });
 
